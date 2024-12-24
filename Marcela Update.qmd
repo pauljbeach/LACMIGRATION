@@ -1,0 +1,2101 @@
+---
+title: "Marcela Deck"
+author: "Paul Beach"
+format: pdf
+editor: visual
+---
+
+```{r setup}
+
+list.files(full.names = T,here("Encounter Data", "Colombia"))
+#TODO put the tables data in data prep
+mth <- "Oct"
+# setup the environment, load parameters 
+source(here("Migration Update", "MU_setup.R"))
+# load utils
+#TODO find a solution for migration functions in a separate repo
+source(here("Migration Update","MU_utils.R"))
+
+#read in encounter data (Change FY argument if September)
+#edata <- setup_migration_datasets(month = mth,year = 2024, fy = F)
+edata <- setup_migration_datasets(month = mth,year = 2024, fy = F)
+
+# functions for other data
+source(here("Migration Update","MU_data_prep.R"))
+
+#load relevant dates
+dt <- load_dates(mth, year2 = 2024)
+lag_dt <- load_lag_dates()
+month2 <- dt$month2
+date2 <- dt$date2
+date1 <- dt$date1
+
+#load supp data
+sup <- load_supp_data()
+
+# assign often used data
+
+swb <- edata$swb
+dar <- edata$dar
+mex <- edata$mex
+cbp_all <- edata$cbp_all
+
+
+# assign other parameters
+
+
+#
+base_family <- "Gill Sans"
+title_family <- "Libre Baskerville"
+
+
+wh_iso <- refugees::countries %>% filter(unhcr_region == "The Americas") %>% pull(iso_code)
+wh_name <- refugees::countries %>% filter(unhcr_region == "The Americas") %>% pull(name)
+lac_iso <- refugees::countries %>% filter(unsd_subregion == "Latin America and the Caribbean") %>% pull(iso_code)
+lac_name <- refugees::countries %>% filter(unsd_subregion == "Latin America and the Caribbean") %>% pull(name)
+
+
+caption_blurb <- paste0("USAID/LAC analysis of CBP data | ", "Chart updated ", month2," ", dt$year2)
+date_blurb <- paste("Chart updated", month2,dt$year2)
+caption_blurb_dar <- paste0("USAID/LAC analysis of Migración Panama data <br>
+                        Chart updated ", month2," ", dt$year2)
+caption_blurb_com <- c("USAID/LAC analysis of Migración Panama data <br>
+                       All information is self-reported")
+
+```
+
+```{r functions }
+
+make_dp <- function(df){
+  df %>% mutate(across(c(refugees,
+                  asylum_seekers,
+                  oip),~as.numeric(.) %>% replace_na(0)),
+                dp = refugees+asylum_seekers+oip)
+}
+```
+
+```{r flows}
+flow_raw <- read_excel("UNHCR_Flow_Data.xlsx",
+           sheet = "DATA",skip = 0) %>% clean_names()
+flow_raw <- refugees::flows
+
+
+flow_raw %>%
+  filter(coo == "VEN",
+         year >= 2015) %>% 
+  mutate(group = case_when(coa == "USA" ~ "USA",
+                           coa %in% lac_iso ~ "LAC",
+                           T ~ "Outside WH")) %>%
+  make_dp() %>% 
+ 
+  summarise(across(dp,sum), .by = c(year,
+                                       group
+                                       #coa,coa_name
+                                       )) %>% 
+  mutate(across(group,~fct_reorder(.,dp,sum))) %>% 
+  ggplot(aes(x = year, y = dp,
+             fill = group
+             ))+
+  geom_chicklet(show.legend = T,
+                #data = . %>% mutate(across(coa_name,fct_rev))
+                )+
+  
+  theme_usaid_blue(bl = F,base_size = 18)+
+  scale_x_continuous(breaks = 2015:2023)+
+  scale_y_continuous(labels = ~./1e3,breaks = seq(5e5,2.5e6,5e5))+
+  theme(legend.position = "right")+
+  labs(y = NULL,
+       x = "Calendar Year",
+       fill = "Region of\nAsylum",
+       subtitle = "Thousands of People",
+       title = "Yearly Flows of Displaced Venezuelans to Neighboring Countries")+
+  guides(color = "none", fill = guide_legend())+
+  theme(plot.title.position = "plot")+
+  geom_rangeframe(position = "stack")+
+  scale_fill_metro()+
+  guides(fill = guide_legend(reverse = T))+
+  geom_text(data = . %>% summarise(across(dp,sum), .by = year) %>% 
+              filter(dp <= 1e6),
+            aes(label = round(dp/1e3,0) %>% paste0(.,"K"),
+                fill = NULL),
+            vjust = -.5,
+            size = 5,
+            family = "Gill Sans",
+            fontface = "bold")+
+  geom_text(data = . %>% summarise(across(dp,sum), .by = year) %>% 
+              filter(dp > 1e6),
+            aes(label = round(dp/1e6,1) %>% paste0(.,"M"),
+                fill = NULL),
+            vjust = -.5,
+            size = 5,
+            family = "Gill Sans",
+            fontface = "bold")+
+  coord_cartesian(ylim = c(0,2.8e6))
+  
+  
+ggs(280)
+```
+
+
+```{r int. Displacement}
+laccc <- refugees::countries %>% filter(unsd_subregion == "Latin America and the Caribbean") %>% 
+  pull(unhcr_code)
+
+int_dis <- refugees::population %>%  
+int_dis_plot <- refugees::population %>%  
+filter(coa_name != "Canada",
+       coa %in% c(laccc, "USA"),
+       coo %in% laccc,
+         year >= 2015,
+       year <= 2024,
+         coo != coa,
+         !coo_name %in% c("United States of America", "Canada")) |>
+   mutate(group = ifelse(coa_name == "United States of America", "US", "LAC"),
+         across(c(refugees,
+                  asylum_seekers,
+                  stateless,
+                  oip),~as.numeric(.) %>% replace_na(0))) %>%
+  mutate(dp = refugees+
+           asylum_seekers+
+           oip,
+         dpv = ifelse(coo_name == "Venezuela (Bolivarian Republic of)",dp,0),
+         asylumg = ifelse(coa_name == "United States of America", "In the United States", "In LAC Countries")) |>
+  group_by(asylumg,year) |>
+  summarise(dpv = sum(dpv),
+            dp = sum(dp),
+  ) |>
+  pivot_longer(-c(asylumg,year),names_to = "Ven", values_to = "dp") |>
+  mutate(across(Ven,as_factor))
+int_dis_plot <- int_dis %>%
+  ggplot(aes(x = year, y = dp, color = asylumg, linetype = Ven))+
+  labs(subtitle = "Displaced Residents from LAC <br> *(Millions)* | 2015 -2023",
+       y = NULL,
+       title = "International Displacement From LAC Countries",
+       x = NULL)+
+  #geom_xspline()+
+  scale_linetype_manual(values = c("dashed", "solid"))+
+  geom_xspline(spline_shape = .2)+
+  coord_cartesian(clip = "off", xlim = c(2015,2027),
+                  expand = F)+
+  
+  geom_point(data = . %>% filter(year == max(year)),
+             aes(shape = Ven))+
+  scale_shape_manual(values = c(1,19), guide = "none")+
+  geom_text_repel(data = . %>% filter(Ven == "dp",year == max(year)),
+                  family = "Gill Sans",
+                  aes(label = asylumg,
+                      color = asylumg),
+                  text_only = F,
+                  direction = "x",
+                  size = 5,
+                  nudge_x = .1,
+                  hjust = 1)+
+  geom_text_repel(data = . %>% filter(Ven != "dp",year == max(year)),
+                  family = "Gill Sans",
+                  aes(label = "of which Venezuelans",
+                      color = asylumg),
+                  text_only = F,fontface = "italic",
+                  size = 5,
+                  direction = "x",
+                  nudge_x = .1,
+                  hjust = 1)+
+  guides(color = "none", linetype = "none")+
+  geom_rangeframe(linetype = "solid", color = "black")+
+  scale_y_continuous(labels = label_number(scale = 1/1e6))+
+  scale_x_continuous(breaks = 2015:2024)+
+  scale_color_see()+
+  theme_usaid_blue(caption = paste("Data from UNHCR | chart compiled by USAID/LAC <br>",
+                                   date_blurb),
+                   base_size = 18)+
+  theme(panel.grid.major.y = element_blank(),
+        plot.title.position = "plot",
+        axis.title.y = element_markdown())
+ggs(
+  plot = int_dis_plot,
+  category = "displacement",
+  subset = "wh",
+  demographics = NULL,
+  charttype = "spag",
+  additionalinfo = "all_ven",
+  extension = ".jpg",
+  folder = "mar_charts",
+  width = 300,
+  height = 170
+)
+
+
+
+```
+
+```{r WH displacement}
+shelf(ggpp)
+#disp western hem
+
+wh_iso <- refugees::countries %>% filter(unhcr_region == "The Americas") %>% pull(iso_code)
+lac_iso <- refugees::countries %>% filter(unsd_subregion == "Latin America and the Caribbean") %>% pull(iso_code)
+
+target_iso <- wh_iso
+
+refugees::population %>%  
+filter(coa_iso %in% wh_iso,
+       year >= 2015,
+       year <= 2023) %>% 
+  mutate(group = ifelse(coa_iso %in% "USA", "USA", "Other Western Hempisphere"),
+         vz = case_when(coo_iso %in% "VEN"~"Venezuela",
+                        coo_iso %in% lac_iso ~"Other\nWH",
+                        T ~ "Extraregional")) %>% 
+  make_dp() %>% 
+  summarise(across(dp,sum),.by = c(year,vz)) %>% 
+  ggplot(aes(x = year, y = dp,fill = vz))+
+  geom_chicklet()+
+  #geom_point(data = . %>% filter(year == max(year)))+
+  theme_usaid_blue(bl = F, rf = F,base_size = 15)+
+  scale_y_continuous(labels = ~./1e6)+
+  labs(subtitle = "Foribly Displaced Outside Country of Origin<br> *(Millions)* | 2015 -2023",
+       y = NULL,
+       title = "International Forced Displacement in the Western Hemisphere",
+       x = NULL,
+       fill = NULL)+
+  coord_cartesian(expand = F)+
+  theme(legend.position = "right")+
+  geom_text_repel(position = position_stacknudge(vjust = .5,
+                                                 x = 1.7,
+                                                 reverse = T,),
+                   aes(label = vz,
+                       color = vz),
+                  fontface = "bold",
+                  size = 4.6,
+                  hjust = 1,
+                  segment.linetype = "dotted",
+                  min.segment.length = Inf,
+                  family = "Cabin",
+                   data = . %>% filter(year == max(year)))+
+  coord_cartesian(xlim = c(2014.5,2024.9),
+                  ylim = c(0,1.1e7),
+                  clip = "off",
+                  expand = F)+
+  guides(color = "none", fill = "none")+
+  scale_x_continuous(breaks = 2015:2023)+
+  geom_rangeframe(position = "stack")+
+  scale_fill_manual(breaks = c("Venezuela",
+                               "Extraregional",
+                               "Other\nWH"),
+                    values = c(
+                               "darkslategray3",
+                               "darkorange3",
+                               "darkslategray"
+                               ))+
+  scale_color_manual(breaks = c("Venezuela",
+                               "Extraregional",
+                               "Other\nWH"),
+                    values = c(
+                               "darkslategray4",
+                               "darkorange3",
+                               "darkslategray"
+                               ))+
+  geom_text(data = . %>% summarise(across(dp,sum), .by = year),
+                  aes(label = round(dp/1e6,1) %>% paste0("M"), x = year, y = dp),
+                  inherit.aes = F,
+            vjust = -.5,
+            size = 5,
+            family = "Cabin",
+            fontface = "bold")+
+  geom_text(data = . %>% filter(year == max(year)),
+            position = position_stack(vjust = .5,reverse = T),
+            color = "white",
+            size = 5,
+            aes(label = round(dp/1e6,1) %>% paste0("M"), x = year, y = dp),
+            family = "Cabin",
+            fontface = "bold")
+ggs(280)
+
+
+```
+
+```{r}
+flow_raw <- read_excel("UNHCR_Flow_Data.xlsx",
+           sheet = "DATA",skip = 0) %>% clean_names()
+flow_raw %>%
+  select(coo= origin_iso,
+         coo_name = origin_name,
+         count,
+         year,
+         coa = asylum_iso,
+         coa_name = asylum_name
+         ) %>% 
+  make_dp()
+  filter(year >= 2015, 
+         coo == "TUR") %>% 
+  mutate(across(coa, ~ifelse(. == "USA","USA","OTHER"))) %>% 
+  #filter(coa != "OTHER") %>% 
+  summarise(across(dp,sum),.by = c(year,coa)) %>% 
+  ggplot(aes(x = year, y = dp,fill = coa))+
+  stat_xspline(geom = "area",position = "stack")+
+  geom_vline(xintercept = 2017)+
+  theme_usaid_blue(bl = F)+
+  guides(x = guide_axis(minor.ticks = T))+
+  scale_x_continuous(minor_breaks = 2000:2023)+
+  theme( axis.minor.ticks.length = rel(0.5),
+         axis.ticks.length = unit(5, "pt"),
+         axis.minor.ticks.x.bottom = element_line(colour = 'black'))+
+  labs(title = "Forced Displacement Flows of Venezuelans (Yearly)",
+       fill = "Country of Asylum")
+```
+
+```{r}
+flow_raw %>%
+  select(coo= origin_iso,
+         coo_name = origin_name,
+         count,
+         year,
+         coa = asylum_iso,
+         coa_name = asylum_name
+         ) %>% 
+  filter(coo %in% "CUB",
+         year >= 1960) %>% 
+  mutate(across(c(coa,coa_name), ~ifelse(coa %in% c("COL", "PER", "ECU", "USA"), ., "Other Countries"))) %>% 
+  mutate(across(coa_name,~fct_reorder(.,count,sum))) %>% 
+  summarise(across(count,sum), .by = c(year,coo)) %>% 
+  ggplot(aes(x = year, y = count))+
+  geom_line()+
+  facet_wrap(~coo,scales = "free")
+```
+
+```{r int. Displacement table }
+laccc <- refugees::countries %>% filter(unsd_subregion == "Latin America and the Caribbean") %>% 
+  pull(unhcr_code)
+
+dt_ref <- refugees::population %>%  
+filter(coa_name != "Canada",
+       coa %in% c(laccc, "USA"),
+       coo %in% laccc,
+         year >= 2015,
+       year <= 2023,
+         coo != coa,
+         !coo_name %in% c("United States of America", "Canada")) |>
+  
+   mutate(group = ifelse(coa_name == "United States of America", "US", "LAC"),
+         across(c(refugees,
+                  asylum_seekers,
+                  stateless,
+                  oip),~as.numeric(.) %>% replace_na(0))) %>%
+  mutate(dp = refugees+
+           asylum_seekers+
+           oip,
+         dpv = ifelse(coo_name == "Venezuela (Bolivarian Republic of)",dp,0),
+         asylumg = ifelse(coa_name == "United States of America", "In the United States", "In LAC Countries")) |>
+  group_by(asylumg,year) |>
+  summarise(dpv = sum(dpv),
+            dp = sum(dp),
+  )
+write_csv(dt_ref,"dt_ref.csv")
+
+  pivot_longer(-c(asylumg,year),names_to = "Ven", values_to = "dp") |>
+  mutate(across(Ven,as_factor))
+  ggplot(aes(x = year, y = dp, color = asylumg, linetype = Ven))+
+  labs(subtitle = "Displaced Residents from LAC <br> *(Millions)* | 2015 -2023",
+       y = NULL,
+       title = "International Displacement From LAC Countries",
+       x = NULL)+
+  #geom_xspline()+
+  scale_linetype_manual(values = c("dashed", "solid"))+
+  geom_xspline(spline_shape = .2)+
+  coord_cartesian(clip = "off", xlim = c(2015,2025),
+                  expand = F)+
+  
+  geom_point(data = . %>% filter(year == max(year)),
+             aes(shape = Ven))+
+  scale_shape_manual(values = c(1,19), guide = "none")+
+  geom_text_repel(data = . %>% filter(Ven == "dp",year == max(year)),
+                  family = "Gill Sans",
+                  aes(label = asylumg,
+                      color = asylumg),
+                  text_only = F,
+                  direction = "x",
+                  size = 5,
+                  nudge_x = .1,
+                  hjust = 1)+
+  geom_text_repel(data = . %>% filter(Ven != "dp",year == max(year)),
+                  family = "Gill Sans",
+                  aes(label = "of which Venezuelans",
+                      color = asylumg),
+                  text_only = F,fontface = "italic",
+                  size = 5,
+                  direction = "x",
+                  nudge_x = .1,
+                  hjust = 1)+
+  guides(color = "none", linetype = "none")+
+  geom_rangeframe(linetype = "solid", color = "black")+
+  scale_y_continuous(labels = label_number(scale = 1/1e6))+
+  scale_x_continuous(breaks = 2015:2023)+
+  scale_color_see()+
+  theme_usaid_blue(caption = paste("Data from UNHCR | chart compiled by USAID/LAC <br>",
+                                   date_blurb),
+                   base_size = 14)+
+  theme(panel.grid.major.y = element_blank(),
+        plot.title.position = "plot",
+        axis.title.y = element_markdown()) 
+ggs(width = 300)
+
+
+
+```
+
+```{r vz dar usa}
+vzreg <- swb %>% 
+  filter(citizenship == "VENEZUELA") %>% 
+  summarise(across(encounter_count,sum),.by = date) %>% 
+  mutate(loc = "swb") %>% 
+bind_rows(
+  dar %>%
+    filter(citizenship == "VENEZUELA") %>% 
+    mutate(loc = "dar") %>% 
+    select(date,encounter_count,loc)
+) %>% 
+  arrange(date) %>% 
+  mutate(loc = fct_relevel(loc, "swb")) %>% 
+  rename(value = encounter_count)
+
+
+vzreg_plot <- vzreg %>% 
+  #filter(loc == "swb") %>% 
+  filter(date > "2019-10-01",
+         #date <= "2023-11-01"
+         ) %>% 
+  ggplot(aes(x = date, y = value, color = loc))+
+  geom_xspline(spline_shape = .2)+
+  theme_usaid_blue(bl = F, rf = F,
+                   base_size = 18,
+                   caption = caption_blurb)+
+  geom_rangeframe(data = . %>% drop_na(),
+                  color = "black")+
+  geom_point(data = . %>% filter(date == max(date)),
+             show.legend = F)+
+  geom_text_repel(data = . %>% filter(date == max(date),.by =loc),
+             show.legend = F,
+            aes(label = c(
+                "U.S. Southwest \nBorder"
+                       ,"Darién \nGap"
+                )# %>% rev()
+                ),
+            size = 5,
+            family = "Gill Sans",
+            nudge_x = 200,
+            fontface = "bold",
+            min.segment.length = 0,hjust = .5,
+            force = 300,
+            segment.linetype = "dotted"
+            )+
+  scale_x_date(breaks = tm_db(month2, n = 1, year0 = 2019),
+               date_labels = "%b '%y")+
+  scale_y_continuous(labels = ~./1e3)+
+  scale_color_metro(reverse = F)+
+  coord_cartesian(clip = "off",
+                  xlim = as_date(c("2019-10-01",
+                                   "2025-02-01"))
+                  )+
+  theme()+
+  
+  geom_label_repel(aes(label = c("TPS Cutoff Announced \n For VZ in Colombia",
+                                 "Mexico Imposes \n Transit Visas For VZ",
+                                 
+                                 "Cutoff For VZ\nTPS Registrations\nIn Colombia",
+                                 
+                                 "VZ Parole Program \nInitiated",
+                                 "Title 8 \nReinstated",
+                                 "Mexico Increases\nEnforcement") %>% toupper
+                       ),
+                   nudge_y = c(2e4,4.5e4,4.5e4,5e4,3e4,2e4),
+                   color = "grey25",
+                   segment.color = "grey40",
+                   size = 3,
+                   force = .2,
+                   family = "Gill Sans",
+                   segment.linetype = "dotted",
+                   data = . %>% filter(loc == "swb",
+                                       date %in% c("2021-03-01",
+                                                   "2022-01-01",
+                                                   "2022-05-01",
+                                                   "2022-10-01",
+                                                   "2023-05-01",
+                                                   "2023-12-01")))+
+  guides(color = "none")+
+  labs(y = NULL,
+       x = NULL,
+       subtitle = "Total Monthly Irregular Encounters <br>
+       *(Thousands)*",
+       title = "Venezuelan Migrant Encounters at the U.S. Southwest Border")+
+  theme(plot.title.position = "plot")
+ggs(
+  plot = vzreg_plot,
+  category = "encoutners",
+  subset = "ven",
+  demographics = NULL,
+  charttype = "spag",
+  additionalinfo = "us",
+  extension = ".jpg",
+  folder = "mar_charts",
+  width = 300,
+  height = 170
+)
+```
+
+```{r parole_area}
+pa_plot <- swb |>
+  mutate(date = date) |>
+  filter(citizenship %in% c(
+    "NICARAGUA",
+    "CUBA",
+    "HAITI",
+    "VENEZUELA"),
+    date >= as.Date("2021-01-01"),
+    component == "U.S. Border Patrol"
+    ) |>
+  arrange(date) |>
+  group_by(date,citizenship) |>
+  summarise(across(encounter_count,sum),.groups = "drop_last") |>
+  pivot_longer(-c(date,citizenship)) |>
+  ungroup() |>
+  mutate(across(citizenship, str_to_title),
+         citizenship = fct_relevel(citizenship,
+                                   "Venezuela",
+                                   "Haiti",
+                                   "Nicaragua",
+                                   "Cuba",
+                                   
+                                   ),
+  ) |>
+
+  ggplot(aes(x = date, y = value, alluvium = citizenship))+
+  geom_area(aes(x = date, y = value, fill = citizenship),
+            alpha = .8,
+            color = "black")+
+  labs(y = "Monthly Encounters <br> *(Thousands)*",
+       x = NULL,
+       title = "Migrants Encountered at the U.S. Southwest Border | **Between Points of Entry**",
+       subtitle = "Parole Program-Eligible Nationalities",
+       # title = "Parole Progam To Credit For Steep Drop In Irregular Migration to the U.S. Southwest Border",
+       fill = "**Nationality:**")+
+  coord_cartesian(expand = F, clip = "off", xlim = as.Date(c("2021-01-01", date2 +300)))+
+  theme_usaid_blue(base_family = "Gill Sans", 
+                   base_size = 18,
+                   caption = paste(cap$swb))+
+  scale_y_continuous(labels = ~./1e3,
+                     sec.axis = dup_axis(name = ""))+
+  scale_x_date(breaks = tm_db(month = month2),
+               date_labels = "%b '%y")+
+  geom_rangeframe(color = "white", sides = "bl")+
+  theme(legend.position = "top",
+        text = element_text(family = "Gill Sans"),
+        plot.subtitle = element_textbox_simple(margin = margin(5,5,10,5), family = "Gill Sans"),
+        plot.caption = element_textbox(margin = margin(5,5,5,5)))+
+  # scale_fill_manual(values = c("darkolivegreen", "darkolivegreen1", "darkolivegreen4", "chocolate1"))+
+  scale_fill_manual(values = c("darkred", "darkblue", "darkorange", "darkgreen"))+
+  geom_curve(aes(x = as.Date("2022-03-01"),
+                 y = 7.5e4,
+                 yend = 2.3e4,
+                 xend = as.Date("2023-01-01")),
+             curvature = -.3,
+             color = "grey30",
+             size = .5,
+             arrow = arrow(length = unit(.3, "cm"))
+  )+
+  geom_curve(aes(x = as.Date("2022-03-01"),
+                 y = 7.5e4,
+                 yend = 6.3e4,
+                 xend = as.Date("2022-10-01")),
+             curvature = -.3,
+             color = "grey30",
+             size = .5,
+             arrow = arrow(length = unit(.3, "cm"))
+  )+
+  guides(color = "none")+
+  geom_vline(xintercept = as.Date("2022-10-01"), color = "chocolate4", linetype = "dashed",linewidth = 1,alpha = .8) +
+  geom_vline(xintercept = as.Date("2023-01-01"), color = "grey", linetype = "dashed",
+             linewidth = 1, alpha = .8)+
+  # map2(c("1345", "1761", "49"),
+  #      c("#F4511E", "#FFB300","#315987"),
+  #      ~geom_vline(xintercept = as.Date("2023-01-06"),
+  #                  color = .y,
+  #                  linetype = .x))+
+  annotate(x = as.Date("2021-12-01"), y = 7.5e4,geom = "richtext",
+           family = "Gill Sans",
+           size = 4,
+           color = "grey20",
+           label = "Parole Program Implemented on October 18th <br>
+           for<span style = 'color:darkred'> <strong>Venezuela</strong></span> and January 6th for <br> <span style = 'color:darkorange'><strong>Nicaragua</strong></span>,
+           <span style = 'color:darkblue'><strong>Haiti</strong></span>, and <span style = 'color:darkgreen'><strong>Cuba</strong></span>")+
+  geom_rangeframe(sides = "bl",position = "stack")+
+  theme(axis.text.y.right = element_blank(),
+        plot.title.position = "plot",
+        legend.title = element_markdown(),
+        axis.ticks.y.right = element_blank(),
+        plot.margin = margin(5,15,5,5),
+        panel.grid.major.y = element_blank())+
+  annotate(x = date2+200,
+           y = 50,
+           geom = "text",
+           label = "")
+ggs(
+  plot = pa_plot,
+  category = "encoutners",
+  subset = "chnv",
+  demographics = "parole",
+  charttype = "area",
+  extension = ".jpg",
+  folder = "mar_charts",
+  width = 300,
+  height = 170
+)
+```
+
+```{r ukraine}
+ne %>% filter(citizenship == "UKRAINE") %>% 
+  summarise(across(encounter_count,sum), .by = c(date)) %>% 
+  filter(year(date)>=2021) %>% 
+  arrange(date) %>% 
+  ggplot(aes(x = date, y = encounter_count))+
+  geom_xspline(spline_shape = .1)+
+  scale_x_date(breaks = tm_db(month2),
+               date_labels = "%b '%y")+
+  geom_vline(xintercept = as_date("2022-04-01"),
+             color = "grey50",
+             linetype = "dotted")+
+  geom_point(data = . %>% filter(date == "2022-04-01"))+
+  geom_label_repel(aes(label = "Uniting For Ukraine \n Parole Program\nImplemented"),
+                   data = . %>% filter(date == "2022-04-01"),
+                   nudge_x = 230,
+                   nudge_y = -5e3,
+                   vjust = .5,
+                   segment.curvature = -.2,
+                   segment.linetype = "dashed",
+                   family = "Gill Sans",
+                   fontface = "bold",
+                   segment.color = "grey50")+
+  theme_usaid_blue(bl = F, base_size = 15,
+                   caption = caption_blurb%>% 
+                     paste("Chart Updated Dec 2023"))+
+  labs(x = NULL,
+       y = NULL,
+       subtitle = "Total Monthly Encounters (Thousands)",
+       title = "U.S. Southwest Border Encounters | Ukrainian Nationals")+
+  scale_y_continuous(labels = ~./1e3)+
+  theme(plot.title.position = "plot")
+
+ggs(width = 280)
+
+```
+
+```{r index Dem Backsliding}
+ne %>% 
+  mutate(auth = ifelse(citizenship %in% c("CUBA", "NICARAGUA", "VENEZUELA"),
+                       "CUBA, NICARAGUA, \nAND VENEZUELA",
+                       "ALL \nOTHERS")) %>% 
+  summarise(across(encounter_count,sum), .by = c(date, auth)) %>% 
+  #filter(date < "2023-01-01") %>% 
+  mutate(index = encounter_count/encounter_count[date == "2020-01-01"], .by = auth) %>% 
+  ggplot(aes(x = date, y = index, color  = auth))+
+  geom_xspline(show.legend = F)+
+  theme_usaid_blue(bl = F,base_size = 15,caption = 
+                    "USAID analysis of DHS/CBP data" %>% paste(date_blurb))+
+  scale_color_pizza()+
+  geom_text_repel(data = . %>% filter(date == max(date)),
+                   aes(label = auth),
+                   direction = "y",
+                  family = "Gill Sans",
+                   nudge_x = 130,
+                  segment.linetype = "dotted",
+                  show.legend = F)+
+  scale_x_date(breaks = seq.Date(from =  as_date("2020-01-01"),
+                                 to = as_date("2023-01-01"),
+                                 by = "year") %>% c(as_date("2023-12-01")),
+               date_labels = "%b '%y")+
+  geom_point(data = . %>% filter(date == max(date)),show.legend = F)+
+  coord_cartesian(xlim = as_date(c("2019-10-01", "2024-11-01")))+
+  labs(subtitle = "Indexed Encounters <br> *(Index = 1 in January 2020)*",
+       title = "Migrant Encounters (Indexed) at the U.S. Southwest Border",
+       x = NULL,
+       y = NULL)+
+  theme(plot.title.position = "plot")+
+   geom_vline(xintercept = as_date(c("2023-01-01")),
+             linetype = "dotted")+
+  # pmap(list(as_date(c("2022-10-01", "2023-01-01")),
+  #           c("VZ", "CU & NI"),
+  #           c(80,60)),
+  #     ~geom_label(aes(x = ..1, y = ..3, label = ..2),
+  #                 color = "black"))+
+  annotate(label = "CHNV Parole \n Initiated",
+           family = "Gill Sans",
+           x = as_date("2022-12-01"),
+           y = 100,
+           label.size = NA,
+           geom = "richtext")+
+  theme(plot.title.position = "plot")
+ggs(280)
+```
+
+```{r index Dem V2}
+
+ne %>% 
+  mutate(auth = ifelse(citizenship %in% c("CUBA", "NICARAGUA", "VENEZUELA"),
+                       "CUBA, NICARAGUA, \nAND VENEZUELA",
+                       "ALL \nOTHERS")) %>% 
+  summarise(across(encounter_count,sum), .by = c(date, auth)) %>% 
+  #filter(date < "2023-01-01") %>% 
+  mutate(index = encounter_count/encounter_count[date == "2020-01-01"], .by = auth) %>% 
+  ggplot(aes(x = date, y = encounter_count, color  = auth))+
+  geom_xspline(show.legend = F)+
+  theme_usaid_blue(bl = F,base_size = 15,caption = caption_blurb %>% paste(date_blurb))+
+  scale_color_pizza()+
+  geom_text_repel(data = . %>% filter(date == max(date)),
+                   aes(label = auth),
+                   direction = "y",
+                  family = "Gill Sans",
+                   nudge_x = 130,
+                  segment.linetype = "dotted",
+                  show.legend = F)+
+  geom_point(data = . %>% filter(date == max(date)),show.legend = F)+
+  coord_cartesian(xlim = as_date(c("2019-10-01", "2024-11-01")),
+                  ylim = c(0,2.6e5))+
+  scale_y_continuous(labels = ~./1e3)+
+  scale_x_date(breaks = seq.Date(from =  as_date("2020-01-01"),
+                                 to = as_date("2023-01-01"),
+                                 by = "year") %>% c(as_date("2023-12-01")),
+               date_labels = "%b '%y")+
+  labs(subtitle = "Migrant Encounters <br> *(Thousands)*",
+       title = "Migrant Encounters at the U.S. Southwest Border",
+       x = NULL,
+       y = NULL)+
+  geom_vline(xintercept = as_date(c("2023-01-01")),
+              linetype = "dotted")+
+  # pmap(list(as_date(c("2022-10-01", "2023-01-01")),
+  #           c("VZ", "CU & NI"),
+  #           c(1.8e5,2.1e5)),
+  #     ~geom_label(aes(x = ..1, y = ..3, label = ..2),
+  #                 color = "black"))+
+  annotate(label = " CHNV Parole Program <br> Initiated",
+           family = "Gill Sans",
+           x = as_date("2022-12-01"),
+           y = 2.5e5,
+           label.size = NA,
+           geom = "richtext")+
+  theme(plot.title.position = "plot")
+
+ggs(width = 280)
+```
+
+```{r index dem v3}
+ne %>% 
+  mutate(auth = ifelse(citizenship %in% c("CUBA", "NICARAGUA", "VENEZUELA"),
+                       "CUBA, NICARAGUA, \nAND VENEZUELA",
+                       "ALL \nOTHERS")) %>% 
+  summarise(across(encounter_count,sum), .by = c(date, auth)) %>% 
+  group_by(date) %>% 
+  group_modify(~adorn_totals(.)) %>% 
+  filter(!str_detect(auth, "Total")) %>%
+  ungroup() %>% 
+  mutate(index = encounter_count/encounter_count[date == "2020-01-01"], .by = auth) %>% 
+  ggplot(aes(x = date, y = encounter_count, fill = auth))+
+  geom_area()+
+  geom_line(position = "stack")
+  #scale_fill_manual(values = c("transparent", main_color_1) %>% rev)+
+  theme_usaid_blue(bl = F)
+```
+
+```{r}
+ibrary(librarian)
+shelf(tidyverse,janitor,googlesheets4)
+shelf(ggpp,ggrepel,scales)
+shelf(ggchicklet,ggthemes,ggtext)
+ggs <- function(width = 250, height = 150,filename = "plt1.jpg",... ) {
+  ggsave("plt1.jpg", width = width, height = height,units = "mm",...)
+}
+
+mig <- read_sheet("1sB-5iAv2GFWPuctHhz7tf3TxPg9dm1bEpxy-v0_rxBk", sheet = "LAC Migration (Summary)",
+                  col_types = "c") %>%
+  clean_names() %>%
+  mutate(across(in_thousands, ~case_when(. == "Central America Integration Programming (Belize, Costa Rica, and Panama"~
+                                           "Central America Integration Programming (Belize, Costa Rica, and Panama)",
+                                         T ~.)))
+
+
+
+
+# mig  <- read_csv("LAC Migration Funding Chart 7.12.23 - LAC Migration (Summary).csv") %>% clean_names() %>%
+#   mutate(across(in_thousands, ~case_when(. == "Central America Integration Programming (Belize, Costa Rica, and Panama"~
+#                                            "Central America Integration Programming (Belize, Costa Rica, and Panama)",
+#                                          T ~.)))
+
+                                           
+distinct(mig,in_thousands)
+level1 <- c("South America Integration Programming (Venezuelan Migrants)",
+            "IDB Grant Facility",
+            "Central America Integration Programming (Belize, Costa Rica, and Panama)",
+            "Central America Reception and Reintegration",
+            "Labor Pathways",
+            "Haiti Reception and Reintegration")
+migc <- mig %>% mutate(cat = ifelse(in_thousands %in% level1,
+                                    in_thousands,
+                                    NA)) %>%
+  fill(cat) %>%
+  filter(in_thousands != "Total Migration Management (Integration + Labor Pathways + Reception/Reintegration)",
+         cat != in_thousands,
+         ! cat %in% c(
+           "Central America Reception and Reintegration",
+                      "Haiti Reception and Reintegration"
+                      )) %>%
+  select(cat,op = in_thousands,everything(),-fy_2024_estimates,-fy_2023_cbj) %>%
+  mutate(across(-c(1,2), ~str_remove(.,"[:punct:]+") %>% str_remove("\\$") %>% as.numeric))
+# mutate(across(cat, ~case_when(. == "Central America Integration Programming (Belize, Costa Rica, and Panama)"~
+#                                 "Central America Integration Programming",
+migc <- read_csv("migcg.csv")
+migc %>%
+  mutate(across(cat2,~fct_relevel(.,"IDB Grant Facility",after = 0))) %>% 
+  ggplot(aes(x = year, y = value, fill = cat2))+
+  geom_chicklet(data = . %>% mutate(across(cat2,fct_rev)))+
+  labs(title = "USAID/LAC Migration Funding | FY 2020 - FY 2025",
+       subtitle = "Funding <br> *($ Millions)*",
+       fill = NULL,
+       x = "Fiscal Year",
+       y = NULL)+
+  scale_y_continuous(labels = label_dollar(scale = 1/1e3),
+                     limits = c(0,1.7e5))+
+  theme_usaid_blue(rf = F,base_size = 18, base_family = "Cabin")+
+  theme(legend.position = "right",
+        plot.title.position = "plot",
+        axis.text.x = element_markdown())+
+  scale_x_continuous(labels = c(2020:2022 %>% as.character() %>% paste0("**", .,"**"),"**2023** <br> *653(a)*", "**2024** <br> *Req.*", "**2025** <br> *CBJ*"),
+                     breaks = c(2020:2025))+
+  scale_fill_manual(values = c("grey","green4","darkorange4" ,"darkslategray4") %>% rev())+
+  scale_color_manual(values = c("black", rep("transparent",2),"black") %>% rev())+
+  geom_label(aes(label = round(sval/1e3,1) %>% paste0("$",.,"M"),
+                 y = sval,
+                 x = year),
+             family = "Cabin",
+             fontface = "bold",
+             data = . %>% filter(cat == "Labor Pathways"),
+             inherit.aes = F,
+             vjust = -.3)+
+  geom_text(show.legend = F,
+            vjust = .5,
+            family = "Cabin",
+            fontface = 'bold',
+            aes(label = round(value/1e3,1) %>% paste0("$",.,"M"),color = cat2),
+            position = position_stack(vjust = .5),
+            data = . %>% filter(value > 0))+
+  theme(panel.grid.major.y = element_blank())+
+  guides(fill = guide_legend(reverse = T))+
+  geom_rangeframe(position = "stack")+
+  geom_rangeframe(position = "identity")+
+  coord_cartesian(expand = F,xlim = c(2019.5,2025.5
+                                      ))+
+  guides()
+
+
+ggs(width = 280)
+
+```
+
+```{r wfpvam food}
+foo <- read_csv("wfpvam_foodprices.csv")
+foo %>% filter(str_detect(adm0_name, "Venezuela"))
+cpi <- read_csv("consumer-price-indices_ven.csv") %>% clean_names()
+
+cpi %>% 
+  filter(iso3 == "VEN") %>% 
+  mutate(across(c(start_date,end_date), as_date),
+         across(c(year,value), as.numeric)) %>% 
+  filter(str_detect(item, "Consumer Prices, Food")) %>% 
+  select(start_date,year,months,value) %>% 
+  arrange(start_date) %>% 
+  filter(year>= 2010) %>% 
+  mutate(value = value/value[start_date == "2010-01-01"]*1,
+         food = 80000/value) %>% 
+  ggplot(aes(x = start_date,y = food))+
+  geom_line()
+  
+
+read_csv("https://raw.githubusercontent.com/TheEconomist/big-mac-data/master/output-data/big-mac-full-index.csv") %>% 
+  filter(iso_a3 == "VEN") %>% 
+  filter(date != "") %>% 
+  ggplot(aes(x = date, y = local_price))+
+  geom_line()+
+  geom_point()
+```
+
+```{r GHG}
+ghgg <- read_excel("GHG Emissions_FY19-FY23.xlsx", sheet = "LAC", skip = 5) %>% clean_names() %>% select(1,contains("fy_")) %>% 
+  rename(region = x1) %>% 
+  mutate(across(-c(region, fy_2024_target), ~replace_na(.,0)),
+         across(-c(region, fy_2024_target), ~ifelse(is.na(region), NA,.)),
+         across(region, ~ifelse(is.na(.), "Target", .)),
+         across(region, ~str_remove(., "USAID") %>% 
+                  str_replace("Latin America and Caribbean",
+                              "LAC") %>% 
+                  str_replace("Caribbean Development", "Car. Dev.") %>% 
+                  str_trim()),
+         across(fy_2024_target, ~./1e3)) %>% 
+  pivot_longer(-region, names_to = "year") %>% 
+  mutate(across(year, ~str_extract(.,"[:digit:]+"))) %>% 
+  filter(sum(value, na.rm = T) >0, .by = region)
+ghgg %>% 
+  mutate(across(region, ~fct_reorder(.,value,sum,.desc = F)),
+         across(year,as.numeric)) %>% 
+  ggplot(aes(x = year, y = value, fill = region))+
+  geom_chicklet(data= . %>%  filter(region != "Target") %>%
+                  mutate(across(region,fct_rev)
+                         )
+                )+
+  geom_chicklet(data= . %>%  filter(region == "Target") %>%
+                  mutate(across(region,fct_rev)
+                         ),
+                color = "black",
+                fill = "grey95"
+                )+
+  scale_fill_see(breaks = ~.[.!="Target"])+
+  guides(fill = guide_legend(reverse=T,))+
+  theme_usaid_blue(bl = F, base_family = "Cabin",base_size = 18)+
+  theme(legend.position = "right")+
+  geom_rangeframe(data = . %>% summarise(across(value,~sum(., na.rm = T)), .by = year),
+                  inherit.aes = F,
+                  aes(x = year,y = value))+
+  coord_cartesian(expand = F,
+                  xlim = c(2018.5,2024.5),
+                  ylim = c(0,9.1e7))+
+  geom_text(data = . %>% summarise(across(value,~sum(., na.rm = T)), .by = year),
+            aes(fill = NULL, label = round(value/1e6) %>% paste0("M")),
+            vjust = -.4,
+            size = 6,
+            family = "Cabin",
+            fontface = "bold")+
+  scale_y_continuous(labels = ~./1e6)+
+  scale_x_continuous(breaks = 2019:2024,
+                     labels = c(2019:2023 %>% paste0("**FY ",.,"**"), "**FY 2024** <br> *Target*"))+
+  labs(x = NULL,
+       y = NULL,
+       fill = NULL,
+       subtitle = "Tons <br> *(Millions)*",
+       title = "GHG Emissions Reduced Through USG Assistance")+
+  theme(plot.title.position = "plot",
+        legend.text = element_markdown(size = 17),
+        axis.text.x = element_markdown())+
+  geom_vline(xintercept = 2023.5, linetype = "dotted")
+ggs(220,150)
+```
+
+```{r repat}
+seq.Date(from = as_date("2023-10-16"), to = as_date("2024-01-10"), by = "week")
+
+
+ver <- ne %>% 
+  filter(citizenship == "VENEZUELA",
+         date >="2023-01-01",
+         date <="2023-12-01") %>% 
+  summarise(across(encounter_count,sum), .by = date) %>% 
+  mutate(across(encounter_count, ~ifelse(date == "2023-10-01", ./2,.))) %>% 
+  summarise(across(encounter_count,sum)) %>% pull(encounter_count)
+ver
+
+
+tibble(type = c("enc", "repat"),
+       value = c(ver,1923) %>% sqrt(),
+       x0 = c(0,300)) %>% 
+  ggplot()+
+  geom_circle(aes(y0 = 0+value, x0 = x0, r = value,
+                  fill = type),
+              show.legend = F)+
+  coord_fixed(xlim = c(-330,530),
+              clip = "off")+
+  theme_usaid_void(base_size = 15)+
+  geom_richtext(y = sqrt(ver),
+            x = 0,
+            size = 7,
+            label = " Approx. <br> <span style = 'font-size:24pt'>120,000 </span> <br> Encounters",
+            family = "Cabin",
+           fill = "transparent",
+            fontface = "bold",label.size = NA,
+            color = "black")+
+  scale_fill_manual(values = c("tan", "darkblue"))+
+  
+  # geom_textcurve(x= 210,xend = 300,yend= 50,y = 200, label = " ",
+  #                  curvature = -.5,straight = T,linetype = "dashed")+
+  # geom_richtext(y = 600,
+  #           x = 480,
+  #           label = "For every repatriation <br> there were over <br> 60 encounters",
+  #           family = "Cabin",
+  #          fill = "white",
+  #           fontface = "bold",
+  #           color = "black")+
+  geom_text(y = 100,
+            x = 450,
+            label = "1,923 repatriations",
+            family = "Cabin",
+           fill = "white",
+           size = 5,
+            fontface = "bold",
+            color = "black")+
+  theme(plot.title.position = "plot",
+        plot.margin = margin(10,0,0,0),
+        plot.caption = element_textbox(size = 7),
+        )+
+  
+  labs(title = "Venezuelan Repatriations <br> against Encounters",
+       subtitle = "Mid-October - January 2024",
+       caption = "Data from DHS/CBP | Chart created By USAID/LAC" %>% paste(.,today()))
+ggs()
+```
+
+```{r FID syria vz}
+
+population %>% 
+  filter(coo %in% c("SYR", "VEN")) %>% 
+  make_dp() %>% 
+  summarise(across(dp,sum),.by = c(coo,year)) %>% 
+  filter(year >=2015) %>% 
+  ggplot(aes(x = year, y = dp, color = coo))+
+  geom_xspline(show.legend = F)+
+  theme_usaid_blue(bl = F,
+                   base_size = 15,
+                   caption = paste("USAID/LAC Analysis of UNCHR Data |",
+                                   "Chart Updated",
+                                   month(today(),label = T,abbr = T),
+                                   year(today()),
+                                   "<br> Total includes the sum of refugees, asylum seekers, and people in need of intl. protection <br>",
+                                   "Figure omits the internal Syrian displacement to accurately compare the regional response"),
+                   base_family = "Gill Sans")+
+  scale_x_continuous(breaks = 2015:2023)+
+  geom_point(data = . %>% filter(year == max(year)),
+             show.legend = F)+
+  scale_y_continuous(labels = ~./1e6)+
+  geom_text_repel(aes(label = c("Venezuela", "Syria") %>% rev()),
+                  show.legend = F,
+                   data = . %>% filter(year == max(year)),
+                   direction = "y",
+                  size = 5,
+                  nudge_x = .5,
+                  family = "Gill Sans",
+                  segment.linetype = "dotted"
+                   )+
+  coord_cartesian(xlim = c(2015,2024),
+                  ylim = c(0,7e6))+
+  scale_color_metro()+
+  labs(subtitle = "Internationally <br> Displaced Migrants <br> *(Millions)*",
+       title = "Forced International Displacement | *Syria and Venezuela*",
+       y = NULL,
+       x = NULL,
+       )+ %>% 
+  theme(plot.title.position = "plot")
+ggs(280)
+```
+
+```{r drg }
+drg <- read_csv("drg_funding2.csv") %>% clean_names()
+
+drg %>% 
+  rename(cat = x1) %>% 
+  filter(!is.na(cat)) %>% 
+  pivot_longer(-cat) %>% 
+  mutate(across(name, ~str_extract(.,"[:digit:]+") %>% as.numeric())) %>% 
+  rename(year = name) %>%
+  mutate(across(cat, ~str_wrap(.,width = 20)),
+         across(cat,~fct_reorder(.,value,sum))) %>% 
+  ggplot(aes(x = year, y = value, fill = cat))+
+  geom_chicklet(data = . %>% mutate(across(cat,fct_rev)))+
+  theme_usaid_blue(bl = F, base_size = 18, base_family = "Cabin", rf = F)+
+  geom_rangeframe(position = "stack", sides = "b")+
+  scale_fill_see(aesthetics = c("fill", "color"))+
+  theme(legend.position = "right")+
+  labs(x = NULL, y = NULL,
+       subtitle = "Dollars <br> *(Thousands)*",
+       title = "Amount of Funds for Government Institution Strengthening by Sector")+
+  theme(plot.title.position = "plot")+
+  geom_label_repel(data = . %>% filter(year == max(year)),
+                  aes(label = cat, color = cat, fill = NULL),
+                  hjust = .5, family = "cabin",
+                  fontface = "bold",
+                  segment.linetype = "dotted",
+                  force_pull = 0,
+                  size = 4,
+                   position = position_stacknudge(x = 1.2, direction = "split.y", 
+                                                  vjust = .5))+
+  coord_cartesian(xlim = c(2019.5,2025),
+                  ylim = c(0,5e5),
+                  expand = F)+
+  guides(fill = "none", color = "none")+
+  scale_y_continuous(labels = label_dollar(scale = 1/1e3))+
+  scale_x_continuous(breaks = 2020:2023, 
+                     labels = ~paste("FY", .))+
+  geom_text(aes(label = round(value/1e3) %>% paste0("$",.), fill = NULL),
+             vjust = -.2,
+            family = "Cabin",
+            fontface = "bold",
+            size = 6,
+             data = . %>% summarise(across(value,sum), .by = year))
+  # geom_text(data = . %>% filter(year == max(year),
+  #                                !str_detect(cat,"Social")
+  #                                ) %>% 
+  #             summarise(across(value,sum), .by = c(year,cat)),
+  #           inherit.aes = F,
+  #           aes(label = round(value/1e3) %>% paste0("$",.), fill = NULL,
+  #               y = value,
+  #               x = year,
+  #               group = cat),
+  #           position = position_stack(vjust = .5),
+  #           color = "white",
+  #           family = "Cabin",
+  #           fontface = "bold",
+  #           size = 5,
+  #            )
+
+ggs()
+```
+
+```{r total syria VZ funding}
+tibble(amt = c(2.18,2.38,2.78,2.76,3.036,3.059,2.83,2.34,1.63,1.84,.853),
+       year = 2013:2023) %>% 
+  mutate(cs = cumsum(amt)) %>% view()
+  ggplot(aes(x = year,y = cs))+
+  geom_line()
+
+
+
+```
+
+```{r share mex table}
+ne %>% 
+  mutate(across(citizenship, ~ifelse(. %in% c("MEXICO", nca), "NCAM", "Other"))) %>% 
+  summarise(across(encounter_count,sum),.by = c(citizenship,fiscal_year)) %>% 
+  mutate(across(encounter_count,~./sum(.),.names = "{.col}_pct"), .by = fiscal_year) %>% 
+  select(-encounter_count) %>% 
+  pivot_wider(names_from = citizenship, values_from = encounter_count_pct) %>% 
+  gt() %>% 
+  fmt_percent(-fiscal_year,decimals = 1) %>% 
+  cols_label(fiscal_year = "Fiscal Year", 
+             NCAM = "NCA + Mexico") %>% 
+  tab_spanner(" % of Total Encounters",
+              c(Other,NCAM)) %>% 
+  tab_header(title = "Share of Encounters at the U.S. Southwest Border",
+             subtitle = "By Region") %>% 
+  tab_footnote(footnote = "Data from DHS/CBP") %>% 
+  gtsave("plt1.png")
+```
+
+```{r 6 nca visa}
+niv2 <- read_csv(here("Visa Data", "Old Visa", "niv2.csv"))
+niv2t <- niv2 %>% 
+  mutate(fiscal_year = fiscal_year(date)) %>% 
+  summarise(across(issuances,sum),.by = c(fiscal_year,nationality, visa_class)) %>%
+  filter(fiscal_year == 2023,
+         visa_class %in% c("H2A",
+                           "H2B",
+                           "J1",
+                           "C1/D")) %>% 
+  rename(value = issuances)
+nivnat <- niv2t$nationality %>% unique()
+fl <- list.files(here("Visa Data", "NIV"))
+mn <- month.name %>% toupper %>% paste(collapse = "|")
+fl_mn <- fl %>% str_extract(mn)
+fl_yr <- fl %>% str_extract("\\b\\d{4}\\b")
+niv <- pmap_df(list(fl,fl_mn,fl_yr), 
+     ~read_excel(here("Visa Data", "NIV", ..1),
+                 skip = 1) %>% 
+       mutate(month := ..2,
+              year := ..3)
+) %>% 
+  clean_names() %>% 
+  mutate(date = paste(month,year) %>% my())
+latam <- map2_df(1:26,1997:2022,
+     ~read_excel(here("Visa Data", "Old Visa", "FYs97-23_NIVDetailTable.xlsx"), sheet = .x) %>% 
+      clean_names() %>% 
+      rename(nationality = 1) %>% 
+      select(nationality,
+             contains("h")&contains("2")& contains(c("a", "b"))) %>% 
+      rename_with(~c("nationality", "h2a", "h2b")) %>% 
+      filter(nationality %in% nivnat) %>% 
+      mutate(fiscal_year = .y)
+) %>% 
+  bind_rows(
+niv %>% 
+  filter(nationality %in% lac_name,
+         visa_class %in% c("H2A", "H2B")) %>% 
+  mutate(fiscal_year = fiscal_year(date)) %>% 
+  summarise(across(issuances,sum), .by = c(fiscal_year,visa_class,nationality)) %>%
+  mutate(across(visa_class,str_to_lower)) %>% 
+  pivot_wider(names_from = visa_class, values_from = issuances) %>% 
+  mutate(across(c(h2a,h2b), ~replace_na(.,0)))
+)
+%>% 
+  pivot_longer(-c(nationality,fiscal_year),
+               names_to = "visa_class",
+               values_to = "issuances") %>% 
+  bind_rows(
+    nivt16.23 %>% 
+      rename(issuances = value) %>% 
+      filter(visa_class %in% c("H2A", "H2B"),
+             fiscal_year == 2023) %>% 
+      mutate(across(visa_class,tolower))
+  )
+```
+```{r}
+latam %>% 
+  filter(nationality %in% c(str_to_title(nca))) %>% 
+  mutate(nationality = ifelse(nationality %in% c(str_to_title(nca), "Mexico"),
+                              nationality,
+                              "Other LAC")) %>% 
+  summarise(across(issuances,sum), .by = c(fiscal_year,visa_class, nationality)) %>% 
+  ggplot(aes(x = fiscal_year,y = issuances))+
+  geom_col(aes(fill = nationality))+
+  facet_wrap(~visa_class,
+             labeller = as_labeller(c(`h2a` = "H2A",
+                                      h2b = "H2B")),strip.position = "bottom"
+             )+
+  theme_usaid_blue(bl = F,base_size = 15)+
+  scale_fill_see()+
+  scale_y_continuous(labels = ~./1e3)+
+  labs(subtitle = "Issuances <br> *(thousands)*
+       ",
+       y = NULL,
+       x = NULL,
+       fill = "Nationality",
+       title = "H2 Visa Issuances in LAC")+
+  theme(plot.title.position = "plot",
+        strip.placement = "outside",
+        legend.position = "right",
+        strip.text = element_markdown(face = "bold"))
+
+ggs(width = 280)
+
+fl <- list.files(here("Visa Data","Old Visa"),
+                 "Detail Table|DetailTable", full.names = T)
+nivt16.23 <- map2(fl,
+     c(2017:2022),
+     ~read_excel(.x) %>%
+       clean_names() %>% 
+       select(country = contains("fiscal_year"),
+              everything()) %>% 
+       filter(country %in% nivnat) %>% 
+       mutate(across(-country,as.numeric),
+              fiscal_year = .y) %>% 
+       select(country,
+              fiscal_year,
+              any_of(c("h_2a", 
+                       "h_2b",
+                       "j_1",
+                       "c_1_d",
+                       "h2a",
+                       "h2b",
+                       "j1",
+                       "c1_d"
+              ))) %>% 
+       rename_with(~c("nationality", 
+                      "fiscal_year",
+                      "H2A",
+                      "H2B",
+                      "J1",
+                      "C1/D"))
+) %>% 
+  bind_rows(niv16_raw %>% rename(nationality = country)) %>% 
+  pivot_longer(-c(nationality,fiscal_year),
+               names_to = "visa_class") %>% 
+  bind_rows(niv2t)
+ncapop <- pop23 %>% filter(str_detect(citizenship,"GUATE|HONDU|EL SAL")) %>% 
+  summarise(across(pop,sum)) %>% 
+  pull(pop)
+mexpop <- pop23 %>% filter(str_detect(citizenship,"MEXICO")) %>% 
+  summarise(across(pop,sum)) %>% 
+  pull(pop)
+latinpop <- pop23 %>% filter(citizenship == "LATIN AMERICA & CARIBBEAN") %>% 
+  summarise(across(pop,sum)) %>% 
+  pull(pop)-mexpop-ncapop
+nivt16.23 %>%
+  mutate(cat = case_when(nationality %in% c("Honduras", "El Salvador", "Guatemala")~"NCA",
+                         nationality %in% c("Mexico")~ "Mexico",
+                      T~"Other\nLAC")) %>% 
+  summarise(across(value,sum),.by = c(fiscal_year,cat,visa_class)) %>% 
+  mutate(pc = case_when(cat == "NCA" ~value/ncapop*1e6,
+                        cat == "Mexico" ~value/mexpop*1e6,
+                        cat == "Other\nLAC"~value/latinpop*1e6)
+         ) %>% 
+  arrange(fiscal_year) %>% 
+  ggplot(aes(x = fiscal_year, y = pc, color  = cat))+
+  geom_xspline()+
+  geom_text_repel(aes(label = cat),
+                  direction = "y",
+                  nudge_x = 1,
+                  family = " Cabin",
+                  fontface = "bold",
+                  segment.linetype = "dotted",
+                 size = 3,
+                 data = . %>% filter(fiscal_year == max(fiscal_year)))+
+  facet_wrap(~visa_class,scales = "free")+
+  geom_point(data = .%>% filter(fiscal_year == max(fiscal_year)))+
+  scale_x_continuous(breaks = seq(2016,2022,2))+
+  scale_color_manual(breaks = c("Mexico",
+                                "Other LAC",
+                                "NCA"),
+                     values = c("darkslategray",
+                                "darkslategray4",
+                                main_color_2))+
+  labs(title = "Per Capita Visa Issuances by Region",
+       x = NULL,
+       y = "Yearly Visa Issuances <br> *(per Million Population)*")+
+  theme_usaid_blue(bl = F,base_size = 15,
+                   caption = "USAID analysis of State Data")+
+  guides(color = "none")+
+  theme(strip.text = element_markdown(face = "bold",size = 12))
+
+
+nca_h2_plot <- latam %>%
+  pivot_longer(-c(nationality,fiscal_year),
+               names_to = "visa_class",
+               values_to = "value") %>% 
+  mutate(across(visa_class, str_to_upper)) %>% 
+  filter(visa_class %in% c("H2B", "H2A"),
+         nationality %in% str_to_title(nca),
+         fiscal_year >= 2016) %>%
+  summarise(across(value,sum),.by = c(fiscal_year,nationality,visa_class)) %>% 
+  mutate(sval = sum(value), .by = fiscal_year,
+         visa_nat = paste(nationality,visa_class,sep = "_"),
+         visa_nat2 = paste0(nationality, " (",visa_class,")")) %>% 
+  arrange(fiscal_year) %>% 
+  ggplot(aes(x = fiscal_year, y =value, fill  = visa_nat))+
+  geom_segment(xend = 2015.5,
+               x = 2023.5,
+               y = 2e4,
+               yend = 2e4,
+               linetype = "dotted",
+               alpha = .4)+
+  geom_chicklet(data = . %>% mutate(across(visa_nat,fct_rev)))+
+  #facet_wrap(~visa_class,scales = "free")+
+  scale_x_continuous(breaks = seq(2016,2024,1))+
+  scale_fill_manual(values = c("El Salvador_H2A" = "darkred",
+                               "El Salvador_H2B" = "red3",
+                               "Guatemala_H2A" = "darkorange3",
+                               "Guatemala_H2B" = "darkorange",
+                               "Honduras_H2A" = "darkgreen",
+                               "Honduras_H2B" = "green4",
+                               ""),
+                    labels = paste(rep(nca,2,each = 2),rep(c("H2A", "H2B"),3))
+                    )+
+  scale_color_manual(values = c("El Salvador_H2A" = "darkred",
+                               "El Salvador_H2B" = "red3",
+                               "Guatemala_H2A" = "darkorange3",
+                               "Guatemala_H2B" = "darkorange",
+                               "Honduras_H2A" = "darkgreen",
+                               "Honduras_H2B" = "green4",
+                               ""),
+                    labels = paste(rep(nca,2,each = 2),rep(c("H2A", "H2B"),3))
+  )+
+  
+  geom_text(aes(label = round(sval/1e3,0),
+                 y = sval,
+                 fill = NULL),
+             vjust = -.2,
+            family = "Gill Sans",
+            fontface = "bold",
+            size = 5,
+             show.legend = F)+
+  labs(title = "H2 Visa Issuances in Northern Central America",
+       x = "Fiscal Year",
+       fill = "Nationality",
+       y = NULL,
+       subtitle = "Yearly Visa Issuances <br> *(Thousands)*")+
+  theme_usaid_blue(bl = F,base_size = 20,
+                   caption = "USAID analysis of State Dept. data" 
+                   #%>% paste("chart updated",today())
+                   )+
+  theme(legend.position = "right",
+        plot.title.position = "plot")+
+  geom_rangeframe(position = "stack")+
+  guides(color = "none")+
+  theme(strip.text = element_markdown(face = "bold",size = 12))+
+  scale_y_continuous(labels = ~./1e3, limits = c(0,3.4e4))+
+  guides(color = "none", fill = "none")+
+  geom_text_repel(data = .%>% filter(fiscal_year == 2024),
+                  family = "Gill Sans",
+                  fontface = "bold",
+                   aes(label = visa_nat2, color = visa_nat),
+                   position = position_stacknudge(x = 1.3,vjust = .5),
+                  #label = paste(rep(nca,2,each = 2),rep(c("H2A", "H2B"),3)),
+                  segment.linetype = "dotted")+
+  coord_cartesian(xlim = c(2015.5, 2026))
+
+
+ggs(
+  plot = nca_h2_plot,
+  category = "visa",
+  subset = "nca",
+  demographics = NULL,
+  charttype = "spag",
+  additionalinfo = "area",
+  extension = ".jpg",
+  folder = "mar_charts",
+  width = 300,
+  height = 170
+)
+
+```
+
+```{r}
+library(refugees)
+
+laccode <- countries %>% 
+  filter(unsd_subregion == "Latin America and the Caribbean") %>% 
+  pull(iso_code)
+amcode <- countries %>% 
+  filter(unhcr_region == "The Americas") %>% 
+  pull(iso_code)
+diffcode <- setdiff(amcode,laccode)
+
+for_ven_plot <- population %>% 
+  filter(coo == "VEN",
+         coa_iso %in% laccode,
+         year >= 2015) %>% 
+  mutate(across(oip,~as.numeric(.) %>% replace_na(0)),
+         dp = refugees+asylum_seekers+oip) %>% 
+  summarise(across(dp,sum), .by = year) %>% 
+  ggplot(aes(x = year, y = dp))+
+  geom_xspline(spline_shape = .2)+
+  theme_usaid_blue(bl = F, base_size = 18,
+                   caption = paste("Displacement data from UNCHR, residency data from R4V, USG, and Natl. Govs","| Chart updated", today()))+
+  geom_point(data = . %>% filter(year == max(year)))+
+  scale_x_continuous(breaks = 2015:2024)+
+  pmap(list(c(4.084e6 + (4.44e6-4.084e6)/2,
+              4.084e6/2),
+            c("black",
+              main_color_1),
+            c("Registered / \nProcessing",
+              "with Visa \nor Res. Permit"),
+            c("bold",
+              "bold.italic")),
+       ~geom_text_repel(aes(x = 2024,
+                             y = ..1,
+                             label = ..3),
+                   color = ..2,
+                   fontface = ..4,
+                   data = . %>% filter(year == 2024),
+                   nudge_x = -1.3,
+                   family = "Cabin",
+                   segment.linetype = "dotted",
+                   segment.curvature = -.5,
+                   ))+
+  geom_col(data = tibble(year = 2024, dp = 4.48e6),
+           fill = "grey90",
+           color = "black")+
+  geom_col(data = tibble(year = 2024, dp = 4.084e6),
+           fill= main_color_1,
+           color = "black")+
+  
+   pmap(list(c(4.48e6,
+              4.084e6),
+            c("grey95",
+              main_color_1),
+            c("black", "white")),
+       ~geom_label(aes(x = 2024, y = ..1,label = round(..1/1e6,1) %>% paste0("M")),
+                   fill = ..2,
+                   fontface = "bold",
+                   color = ..3))+
+  geom_text_repel(data = . %>% filter(year == 2024),
+                   direction = "y",
+                  size = 5,
+                  fontface = "bold",
+                   aes(label = round(dp/1e6,1) %>% paste("M")),
+                  vjust = -1)+
+  scale_y_continuous(labels = c("6m","4","2"),breaks = c(6e6,4e6,2e6),
+                     limits = c(-1e3,6.9e6))+
+  labs(y = NULL,
+       x = NULL,
+       title = "Forced Venezuelan Displacement in LAC",
+       subtitle = "Venezuelan Refugees, Asylum Seekers, and Others in Need of International Protection")+
+  theme(plot.title.position = "plot",
+        plot.caption = element_textbox_simple(size = 10))
+ggs(
+  plot = for_ven_plot,
+  category = "displacement",
+  subset = "ven",
+  demographics = NULL,
+  charttype = "spag",
+  additionalinfo = "regular",
+  extension = ".jpg",
+  folder = "mar_charts",
+  width = 300,
+  height = 170
+)
+```
+
+```{r 5}
+
+nivnat <- niv$nationality %>% unique()
+
+niv <- read_csv("Visa Data/Non Immigrant Monthly Visas - nivexp.csv") %>% 
+  arrange(desc(date))
+
+flro23 <- list.files("./Visa Data", pattern = c("JULY|AUG|SEPT"),full.names = T)
+nivq4fy23 <- map2_df(flro23,
+                     c("2023-07-01",
+                       "2023-08-01",
+                       "2023-09-01"),
+                     ~read_excel(.x,skip = 1) %>% clean_names() %>% mutate(date =as_date(.y)) %>% 
+                       filter(nationality %in% nivnat))
+niv16_raw <- read_excel("FY16 NIV Detail Table.xls") %>% clean_names() %>% 
+  select(country = fiscal_year_2016,
+         everything()) %>% 
+  mutate(fiscal_year = 2016) %>% 
+  select(country,
+         fiscal_year,
+         any_of(c("h_2a", 
+                  "h_2b",
+                  "j_1",
+                  "c_1_d",
+                  "h2a",
+                  "h2b",
+                  "j1",
+                  "c1_d"
+         ))) %>% 
+  rename_with(~c("country", 
+                 "fiscal_year",
+                 "H2A",
+                 "H2B",
+                 "J1",
+                 "C1/D")) %>% 
+  filter(country %in% nivnat)
+fl <- list.files("Visa Data", "Detail",full.names = T)
+niv16.22 <- map2(fl,
+        c(2017:2022),
+       ~read_excel(.x) %>%
+      clean_names() %>% 
+      select(country = contains("fiscal_year"),
+             everything()) %>% 
+      filter(country %in% nivnat) %>% 
+      mutate(across(-country,as.numeric),
+             fiscal_year = .y) %>% 
+       select(country,
+              fiscal_year,
+              any_of(c("h_2a", 
+                       "h_2b",
+                       "j_1",
+                       "c_1_d",
+                       "h2a",
+                       "h2b",
+                       "j1",
+                       "c1_d"
+                       ))) %>% 
+       rename_with(~c("country", 
+                      "fiscal_year",
+                      "H2A",
+                      "H2B",
+                      "J1",
+                      "C1/D"))
+     ) %>% 
+  bind_rows(niv16_raw) %>% 
+  pivot_longer(-c(country,fiscal_year),
+               names_to = "cat") %>% 
+  summarise(across(value,sum),.by = c(cat,fiscal_year))
+
+
+
+########### collect data for M here
+ref_raw <- read_csv(here("Visa Data", "Old Visa","PRM Refugee Admissions Report as of 31 Oct 2023.csv")) %>% clean_names()
+ref_raw <- read_csv("Visa Data/PRM Refugee Admissions Report as of 31 Oct 2023.csv") %>% clean_names()
+ref_raw2 <- read_csv("prm_ref.csv") %>% clean_names()
+
+
+ref <- ref_raw %>% 
+  select(-c(to_the_u_s,ceiling,country)) %>% 
+  pivot_longer(-year) %>% 
+  mutate(year = ifelse(name %in% c("oct", "nov", "dec"), year -1, year),
+         date = paste(name,year) %>% my()) %>% 
+  select(value,
+         date) %>% 
+  mutate(cat = "Refugees")
+
+ref2 <-  ref_raw2 %>% 
+  select(-c(to_the_u_s,ceiling)) %>% 
+  pivot_longer(-c(year,country)) %>% 
+  mutate(year = ifelse(name %in% c("oct", "nov", "dec"), year -1, year),
+         date = paste(name,year) %>% my()) %>% 
+  select(value,
+         country,
+         date) %>% 
+  mutate(class = "Refugee")
+write_csv(ref2, here("Visa Data", "Old Visa","ref2.csv"))
+write_csv(ref2,"ref2.csv")
+
+#NIV
+niv2 <- niv %>% bind_rows(nivq4fy23) 
+write_csv(niv2, "niv2.csv")
+niv2 <-read_csv("niv2.csv")
+
+niv2 %>% 
+  filter(fiscal_year(date) == 2023,
+         str_detect(visa_class, "H"),
+         nationality %in% c("Guatemala", "Honduras", "El Salvador")) %>% 
+  summarise(across(issuances,sum))
+nivt <- niv2 %>% filter(visa_class %in% c("J1", "H2A", "H2B", "C1/D")) %>% 
+  summarise(across(issuances, sum), .by = c(date,visa_class)) %>% 
+  rename(cat = visa_class,
+         value = issuances) %>% 
+  filter(date >= "2015-10-01")
+
+```
+
+```{r new pull visa pathways}
+latam2 <- map2_df(1:27,1997:2023,
+     ~read_excel(here("Visa Data", "Old Visa", "FYs97-23_NIVDetailTable.xlsx"), sheet = .x) %>% 
+      clean_names() %>% 
+      rename(nationality = 1) %>% 
+      select(nationality,
+             contains("h")&contains("2")& contains(c("a", "b"))|contains("1_d")|contains("j_1")|contains("j1"))%>%
+      rename_with(~c("nationality", "h2a", "h2b", "c1/d", "j1")) %>% 
+      filter(nationality %in% nivnat) %>% 
+      mutate(across(-nationality, as.numeric)) %>% 
+      mutate(fiscal_year = .y)
+) %>% 
+  bind_rows(
+niv %>% 
+  filter(nationality %in% lac_name,
+         visa_class %in% c("H2A", "H2B", "C1/D", "J1"),
+         fiscal_year(date)>=2024) %>% 
+  mutate(fiscal_year = fiscal_year(date)) %>% 
+  summarise(across(issuances,sum), .by = c(fiscal_year,visa_class,nationality)) %>%
+  mutate(across(visa_class,str_to_lower)) %>% 
+  pivot_wider(names_from = visa_class, values_from = issuances) %>% 
+  mutate(across(c(h2a,h2b,"c1/d", "j1"), ~replace_na(.,0)))
+) %>% 
+  select(-nationality) %>% 
+  pivot_longer(-fiscal_year,
+               names_to = "visa_class",
+               values_to = "issuances") %>% 
+  summarise(across(issuances,sum), .by = c(fiscal_year,visa_class)) %>% 
+  mutate(across(visa_class,str_to_upper)) %>% 
+bind_rows(
+
+tribble(
+  ~fiscal_year, ~visa_class, ~issuances,
+  2023,"CHNV",233650,
+  2024,"CHNV",531000-233650,
+  2023,"CBP1",276000,
+  2024,"CBP1",852000-276000,
+  2023,"Refugees", 6312,
+  2024,"Refugees", 25358,
+  2022,"Refugees", 2485,
+)
+)
+
+
+pull_chnv() %>% 
+  mutate(fiscal_year = fiscal_year(date)) %>%
+  summarise(across(parole_count,sum),.by = c(fiscal_year))
+
+
+#chnv
+chnvt <- tibble(date = seq.Date(from = as_date("2022-10-01"), as_date("2023-09-01"), by = "month"),
+                cat = "chnv",
+                value = 27400) %>% 
+<<<<<<< HEAD
+  mutate(value = ifelse(date < "2023-01-01", 6050,value)) %>% 
+  mutate(fiscal_year = fiscal_year(date)) %>% 
+  summarise(across(value,sum), .by = c(cat,fiscal_year))
+
+ref2t <- ref2 %>% summarise(across(value,sum), .by = date) %>% 
+  mutate(cat = "Refugees")
+
+
+(1440-392)/392
+```
+```{r}
+latgg <- latam2 %>% 
+  mutate(cat = visa_class,
+         value = issuances) %>% 
+  mutate(cat = fct_relevel(cat,"H2A", "H2B", "J1", "C1/D","CHNV","CBP1", "Refugees") %>% fct_rev()) %>% 
+  mutate(sval = sum(value), .by = fiscal_year) %>% 
+  filter(fiscal_year >= 2017)
+
+lat_plot <- latgg %>% 
+  ggplot(aes(x = fiscal_year, y= value, fill = cat))+
+  geom_col()+
+  theme_usaid_blue(rf = F, bl =F, base_size = 19,
+                   caption = "Data from USCIS, PRM, CBP | Chart compiled by USAID/LAC <br>2024 visa totals reflect provisional sum from monthly reporting<br>Chart Updated Dec 2024")+
+  theme(legend.position = "right",
+        plot.title.position = "plot")+
+  scale_fill_manual(breaks = c("H2A", "H2B", "J1", "C1/D","CHNV","CBP1", "Refugees") %>% rev(),
+bind_rows(chnvt,
+          nivt) %>% 
+  bind_rows(ref2t) %>% 
+  mutate(year = fiscal_year(date)) %>% 
+  filter(date >= "2017-05-01") %>% 
+  summarise(across(value,sum), .by = c(cat,date)) %>% 
+  mutate(cat = fct_relevel(cat,"H2A", "H2B", "J1", "C1/D","chnv", "Refugees") %>% fct_rev()) %>% 
+  mutate(sval = sum(value), .by = date) %>% 
+  ggplot(aes(x = date, y= value, fill = cat))+
+  geom_col()+
+  theme_usaid_blue(rf = F, bl =F, base_size = 17,
+                   caption = "Data from USCIS, PRM, CBP | Chart compiled by USAID/LAC <br> 
+                   <sup>1</sup>CHNV counts estimated from cumulative reporting")+
+  theme(legend.position = "right",
+        plot.title.position = "plot")+
+  scale_fill_manual(breaks = c("H2A", "H2B", "J1", "C1/D","chnv", "Refugees") %>% rev(),
+                    values = c("H2A" = "darkslategray",
+                               "H2B" = "darkslategray3",
+                               "J1" = "deepskyblue4",
+                               "C1/D" = "deepskyblue",
+                               "CHNV" = "darkorange3",
+                               "Refugees" = "darkred",
+                               "CBP1" = "purple4") %>% rev(),
+                               "chnv" = "darkorange3",
+                               "Refugees" = "darkred") %>% rev(),
+                    labels =
+                      c("H2A" = "H2A",
+                        "H2B" = "H2B",
+                        "J1" = "J1",
+                        "C1/D" = "C1/D",
+                        "CHNV" = "CHNV",
+                        "Refugees" = "Refugees",
+                        "CBP1" = "CBP1"))+
+  geom_rangeframe(color = "black",position = "stack")+
+  geom_rangeframe(color = "black")+
+  coord_cartesian(expand = F,ylim = c(0,1.8e6),
+                  xlim = c(2016,2025))+
+                        "chnv" = "CHNV<sup>1</sup>",
+                        "Refugees" = "Refugees"))+
+  geom_rangeframe(color = "black",position = "stack")+
+  geom_rangeframe(color = "black")+
+  coord_cartesian(expand = F)+
+  labs(title = "Legal Pathways - Issuance Counts to LAC Nationals",
+       subtitle = "Issuances <br> *(Thousands)*",
+       y = NULL,
+       x = NULL,
+       fill = "Category")+
+  scale_x_continuous(breaks = 2017:2024)+
+   geom_text(aes(label = round(sval/1e3,0),
+                 y = sval),
+             vjust = -.4,
+             size = 5,
+             family = "Gill Sans",
+             fontface = "bold")+
+    geom_text(aes(label = round(value/1e3)),
+             vjust = 0,
+             position = position_stack(vjust = .5),
+             data = . %>% filter(fiscal_year == max(fiscal_year),
+                                 cat != "Refugees"),
+             family = "Gill Sans",
+             color = "white")+
+  geom_text_repel(aes(label = round(value/1e3),
+                y = sval-25e3),
+             vjust = 0,
+             position = position_stacknudge(x = 1),
+             data = . %>% filter(fiscal_year == max(fiscal_year),
+                                 cat == "Refugees"),
+             family = "Gill Sans",
+             min.segment.length = 0,
+             color = "darkred")+
+  scale_y_continuous(labels = ~./1e3)+
+  theme(legend.text = element_markdown())+
+  geom_labelsegment(aes(xend = 2021, x = 2024,
+                       label = "267%", 
+                       y = 1700e3, yend = 653e3),
+                    lineend = "square",
+                    inherit.aes = F)+
+  geom_point(aes(y = sval +260e3),
+             show.legend = F,
+             data = . %>% filter(fiscal_year %in% c(2021,2024)))
+lat_plot
+
+ggs(
+  plot = lat_plot,
+  category = "legalpathways",
+  subset = NULL,
+  demographics = NULL,
+  charttype = "column",
+  additionalinfo = NULL,
+  folder = "mar_charts",
+  width = 280,
+  height = 170
+)
+1700-1440
+```
+```{r}
+  scale_x_date(breaks = as_date(c("2021-03-01",
+                                  "2022-03-01",
+                                  "2023-03-01",
+                                  "2020-03-01",
+                                  "2019-03-01",
+                                  "2018-03-01",
+                                  "2017-03-01")),
+               date_labels = "%b '%y")+
+  geom_text_repel(aes(label = round(sval/1e3,0), y = sval, x = date), 
+                  inherit.aes = F,
+                  size = 4,
+                  label.padding = unit(.4,"mm"),
+                  vjust = -1,
+                  min.segment.length = 0,
+                  segment.curvature = -.5,
+                  segment.linetype = "dotted",
+                  segment.curvature = "grey",
+                  nudge_y = 1e3,
+                  family = "Cabin",
+                  data = . %>% filter(cat == "J1", date %in% as_date(c("2021-03-01",
+                                                                       "2022-03-01",
+                                                                       "2023-03-01",
+                                                                       "2020-03-01",
+                                                                       "2019-04-01",
+                                                                       "2018-04-01",
+                                                                       "2017-03-01"))))+
+  scale_y_continuous(labels = ~./1e3, limits = c(0,1.3e5))+
+  theme(legend.text = element_markdown())
+
+(815-280)/280
+
+ggs(width = 280)
+CAGR_formula <- function(PV, FV, yrs) {
+  values <- ((FV/PV)^(1/yrs)-1)
+  return(values)
+}
+#### TABLE TABLE TABLE
+bind_rows(chnvt,
+          nivt %>% filter(date >= "2022-10-01")) %>% 
+  bind_rows(ref2t) %>% 
+  mutate(fiscal_year = fiscal_year(date)) %>% 
+  filter(date >= "2016-10-01") %>% 
+  summarise(across(value,sum), .by = c(cat,fiscal_year)) %>% 
+  bind_rows(niv16.22) %>% 
+  pivot_wider(names_from = fiscal_year) %>%
+  mutate(across(-cat,~replace_na(.,0))) %>% 
+  select(cat,`2016`,`2017`,`2018`,`2019`,`2020`,`2021`,`2022`,`2023`) %>% 
+  #mutate(across(-cat, ~ifelse(cat != "chnv", ./12, .),.names = "m_{.col}")) %>% 
+  mutate(`2023` = ifelse(cat == "chnv", 264800,`2023`),
+         #`m_2023` = ifelse(cat == "chnv", 27402,`m_2023`)
+         ) %>%
+  mutate(across(cat, ~ifelse(. == "chnv", toupper(.),.))) %>% 
+  mutate(cat = fct_relevel(cat,"H2A", "H2B", "J1", "C1/D","CHNV", "Refugees")) %>% 
+  arrange(cat) %>% 
+  mutate(pct_change = ifelse(cat != "Refugees",
+                             (`2023`-`2016`)/`2016`,
+                             (`2023`-`2017`)/`2017`
+                             ),
+         cagr = ifelse(cat != "Refugees",
+                       CAGR_formula(`2016`,`2023`,7),
+                       CAGR_formula(`2017`,`2023`,6))) %>% 
+  mutate(across(where(is.numeric), ~ifelse(is.infinite(.),NA,.)),
+         across(where(is.numeric), ~ifelse(.==0,NA,.))) %>% 
+  gt(rowname_col = "cat") %>% 
+  fmt_number(scale_by = 1/1e3,decimals = 0) %>% 
+  fmt_number(scale_by = 1/1e3,rows = cat == "Refugees", decimals = 1) %>% 
+  fmt_percent(c(pct_change,cagr),decimals = 0) %>% 
+  sub_missing() %>% 
+  #fmt_number(columns = contains("m_"),scale_by = 1/1e3,decimals = 1) %>% 
+  # tab_spanner("FY 2022", contains("2022")) %>% 
+  # tab_spanner("FY 2023", contains("2023"),) %>% 
+  # tab_spanner("FY 2021", contains("2021"),) %>% 
+  # tab_spanner("FY 2020", contains("2020"),) %>% 
+  # tab_spanner("FY 2019", contains("2019"),) %>% 
+  # tab_spanner("FY 2018", contains("2018"),) %>% 
+  # tab_spanner("FY 2017", contains("2017"),) %>% 
+  # tab_spanner("FY 2016", contains("2016"),) %>% 
+  tab_spanner("Pct. Change",contains("pct_change")) %>% 
+  tab_spanner("CAGR",contains("cagr")) %>% 
+  tab_header(md("Legal Pathways -- Issuances to LAC Nationals"),
+             subtitle = "Thousands of Issuances") %>% 
+  cols_label(contains("2023")~ "FY 2023",
+             contains("2022")~ "FY 2022",
+             contains("2021")~ "FY 2021",
+             contains("2020")~ "FY 2020",
+             contains("2019")~ "FY 2019",
+             contains("2018")~ "FY 2018",
+             contains("2017")~ "FY 2017",
+             contains("2016")~ "FY 2016",
+             pct_change~ "FY16- FY23",
+             cagr ~"FY16-FY23"
+  ) %>% 
+  gt::cols_align("center") %>% 
+  gt::grand_summary_rows(columns = -pct_change,fns = Total~round(sum(., na.rm = T)/1e3,0)) %>% 
+  gt::grand_summary_rows(columns = pct_change,fns = Total~round((815-280)/280*100,0) %>% paste0("%")) %>% 
+ gt::grand_summary_rows(columns = cagr,fns = Total~round(((815/280)^(1/7)-1)*100,0) %>% paste0("%")) %>% 
+  tab_style(cell_text(weight = "bold"),
+            list(
+              #cells_body(columns = !contains("m_")),
+                 cells_stub(),
+                 cells_stub_grand_summary(),
+                 cells_column_labels()
+            )
+  ) %>% 
+  # tab_footnote() %>% 
+  cols_width(contains(c("pct_change", "cagr"))~px(120),
+             where(is.numeric)~px(60)
+             ) %>% 
+  gtsave("plt1.png")
+bind_rows(chnvt,
+          nivt %>% filter(date >= "2022-10-01")) %>% 
+  bind_rows(ref2t) %>% 
+  mutate(fiscal_year = fiscal_year(date)) %>% 
+  filter(date >= "2016-10-01") %>% 
+  summarise(across(value,sum), .by = c(cat,fiscal_year)) %>% 
+  bind_rows(niv16.22) %>% 
+  mutate(cat = fct_relevel(cat,"H2A", "H2B", "J1", "C1/D","chnv", "Refugees") %>% fct_rev()) %>% 
+  mutate(sval = sum(value), .by = fiscal_year) %>% 
+  ggplot(aes(x = fiscal_year, y= value, fill = cat))+
+  geom_col()+
+  theme_usaid_blue(rf = F, bl =F, base_size = 17,
+                   caption = "Data from USCIS, PRM, CBP | Chart compiled by USAID/LAC <br> 
+                   <sup>1</sup>CHNV counts estimated from cumulative reporting")+
+  theme(legend.position = "right",
+        plot.title.position = "plot")+
+  theme(plot.title = element_textbox_simple(color = "black", face = "italic"))+
+  scale_fill_manual(breaks = c("H2A", "H2B", "J1", "C1/D","chnv", "Refugees") %>% rev(),
+                    values = c("H2A" = "darkslategray",
+                               "H2B" = "darkslategray3",
+                               "J1" = "deepskyblue4",
+                               "C1/D" = "deepskyblue",
+                               "chnv" = "darkorange3",
+                               "Refugees" = "darkred") %>% rev(),
+                    labels =
+                      c("H2A" = "H2A",
+                        "H2B" = "H2B",
+                        "J1" = "J1",
+                        "C1/D" = "C1/D",
+                        "chnv" = "CHNV<sup>1</sup>",
+                        "Refugees" = "Refugees"))+
+  geom_rangeframe(color = "black",position = "stack")+
+  geom_rangeframe(color = "black")+
+  coord_cartesian(expand = F)+
+  labs(title = "Legal Pathways - Issuance Counts to LAC Nationals",
+       subtitle = "Issuances *(Thousands)*",
+       y = NULL,
+       x = NULL,
+       fill = "Category")+
+  scale_y_continuous(labels = ~./1e3, limits = c(0,10e5))+
+  scale_x_continuous(breaks = 2016:2023)+
+  # geom_label(aes(label = round(sval/1e3,0),
+  #                x = fiscal_year,
+  #                y = sval),
+  #            inherit.aes = F,
+  #            show.legend = F)+
+  theme(legend.text = element_markdown())+
+  # geom_point(aes(x = c(2023,2021),
+  #                y = c(854e3,492e3)),lineend = "square",inherit.aes = F,
+  #            data = . %>% filter(fiscal_year %in% c(2021,2023)))+
+  geom_labelsegment(aes(xend = 2021, x = 2023,
+                       label = "107%", 
+                       y = 915e3, yend = 493e3),
+                    lineend = "square",
+                    inherit.aes = F)+
+  geom_point(aes(y = sval +100e3),
+             show.legend = F,
+             data = . %>% filter(fiscal_year %in% c(2021,2023)))+
+  geom_label(aes(label = round(sval/1e3,0),
+                 y = sval),
+             vjust = 0,
+             fill = "white")
+ggs(width = 280)
+
+```
+
+```{r}
+shelf(countrycode)
+ne %>%
+  mutate(countryname = countryname(citizenship),
+         #citizenship = ifelse(!is.na(countryname),countryname,citizenship),
+         region = countrycode(countryname,
+                              origin = "country.name",
+                              destination = "region23")) %>% 
+  filter(region %in% c("Central America", "South America", "Caribbean")) %>% 
+  mutate(nca = ifelse(citizenship %in% nca,
+                      "NCA",
+                      "OTHER")) %>% distinct(citizenship)
+  filter(citizenship != "Mexico") %>% 
+  distinct(citizenship) %>% view()
+  summarise(across(encounter_count,sum),.by = c(nca,date)) %>% 
+  ggplot(aes(x = date, y = encounter_count, color = nca))+
+  geom_line()
+
+```
+
+
+```{r prmplot rap}
+rap_plot <- tribble(
+  ~fiscal_year, ~type, ~value,
+  2022, "Refugee Approvals",4185,
+  2023, "Refugee Approvals",10696,
+  2024, "Refugee Approvals",47000,
+  2022, "Refugee Arrivals",2485,
+  2023, "Refugee Arrivals", 6312,
+  2024, "Refugee Arrivals", 25358
+) %>% 
+  ggplot(aes(x = fiscal_year, y = value, fill = type)) +
+  geom_chicklet(position = "dodge") +
+  scale_fill_manual(values = c("Refugee Approvals" = "skyblue",
+                               "Refugee Arrivals" = main_color_1)) +
+  labs(title = "Refugee Approvals and Arrivals by Fiscal Year",
+       x = "Fiscal Year",
+       y = NULL,
+       fill = NULL,
+       caption = "Source: PRM") +
+  theme_usaid_blue(bl = F,base_size = 20) +
+  theme(legend.position = "top") +
+  geom_text(aes(label = round(value/1e3,1)),
+             position = position_dodge(width = 1),
+             vjust = -0.8, 
+             size = 5,
+            family = "Gill Sans",
+            fontface = "bold")+
+  scale_y_continuous(labels = c(0,10,20,30,"40\nThousand"),
+                     breaks = c(0,10,20,30,40)*1e3)+
+  coord_cartesian(ylim = c(0, 49000))
+
+ggs(
+  plot = rap_plot,
+  category = "refugeeadmin",
+  subset = NULL,
+  demographics = NULL,
+  charttype = "column",
+  additionalinfo = "2022-2024",
+  folder = NULL,
+  width = 280,
+  height = 170
+)
+```
+
+```{r russia style}
+rap_plot <- tribble(
+  ~fiscal_year, ~type, ~value,
+  2022, "Refugee Approvals",4185,
+  2023, "Refugee Approvals",10696,
+  2024, "Refugee Approvals",47000,
+  2022, "Refugee Arrivals",2485,
+  2023, "Refugee Arrivals", 6312,
+  2024, "Refugee Arrivals", 25358
+) %>% 
+  ggplot(aes(x = fiscal_year, y = value, fill = type)) +
+  geom_chicklet(position = "dodge") +
+  scale_fill_manual(values = c("Refugee Approvals" = "skyblue",
+                               "Refugee Arrivals" = main_color_1)) +
+  labs(title = "Refugee Approvals and Arrivals by Fiscal Year",
+       x = "Fiscal Year",
+       y = NULL,
+       fill = NULL,
+       caption = "Source: PRM") +
+  theme_usaid_blue(bl = F,base_size = 20) +
+  theme(legend.position = "top") +
+  geom_text(aes(label = round(value/1e3,1)),
+             position = position_dodge(width = 1),
+             vjust = -0.8, 
+             size = 5,
+            family = "Gill Sans",
+            fontface = "bold")+
+  scale_y_continuous(labels = c(0,10,20,30,"40\nThousand"),
+                     breaks = c(0,10,20,30,40)*1e3)+
+  coord_cartesian(ylim = c(0, 49000))
+
+ggs(
+  plot = rap_plot,
+  category = "refugeeadmin",
+  subset = NULL,
+  demographics = NULL,
+  charttype = "column",
+  additionalinfo = "2022-2024",
+  folder = NULL,
+  width = 280,
+  height = 170
+)
+```
+

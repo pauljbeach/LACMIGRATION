@@ -1,0 +1,3273 @@
+---
+title: "Ven Update"
+author: "Paul Beach"
+format: html
+editor: visual
+---
+
+```{r setup}
+
+
+#TODO put the tables data in data prep
+mth <- "Sep"
+# setup the environment, load parameters 
+source("MU_setup.R")
+# load utils
+#TODO find a solution for migration functions in a separate repo
+source("MU_utils.R")
+
+#read in encounter data (Change FY argument if September)
+edata <- setup_migration_datasets(month = mth,year = 2024, fy = T)
+
+# functions for other data
+source("MU_data_prep.R")
+
+#load relevant dates
+dt <- load_dates(mth, year2 = 2024)
+lag_dt <- load_lag_dates()
+month2 <- dt$month2
+date2 <- dt$date2
+date1 <- dt$date1
+
+#load supp data
+sup <- load_supp_data()
+
+# assign often used data
+
+swb <- edata$swb
+dar <- edata$dar
+mex <- edata$mex
+cbp_all <- edata$cbp_all
+
+
+# assign other parameters
+
+
+#
+base_family <- "Gill Sans"
+title_family <- "Libre Baskerville"
+```
+
+## U.S. Graphs
+
+### Agg Time Series
+
+```{r monthly facets}
+swb_plot <- swb %>%
+  summarise(across(encounter_count, sum), .by = c(date, citizenship)) %>%
+  mutate(across(
+    citizenship,
+    ~ ifelse(!citizenship %in% swb_lac, "OTHER", citizenship)
+  )) %>%
+  summarise(across(encounter_count, sum), .by = c(citizenship, date)) %>%
+  mutate(across(citizenship, ~ ifelse(
+    str_detect(., "CHINA"), "CHINA", citizenship
+  ))) %>% 
+  mutate(across(citizenship,  ~ fct_reorder(., encounter_count, sum, .desc = T))) %>%
+  filter(!citizenship %in% c("MEXICO", "OTHER")) %>%
+  ggplot(aes(x = date, y = encounter_count, color = citizenship)) +
+  facet_wrap( ~ citizenship) +
+  geom_line(show.legend = F, linewidth = 1.5) +
+ 
+  gghighlight::gghighlight(
+    keep_scales = T,
+    use_direct_label = F,
+    unhighlighted_params = list(linewidth = .5)
+  ) +
+  scale_color_cbp() +
+  scale_y_continuous(labels = ~ . / 1e3) +
+  scale_x_date() +
+  labs(
+    y = NULL,
+    x = "Fiscal Year",
+    fill = NULL,
+    subtitle = "Monthly Encounters <br> *(Thousands)*",
+    title = "Top Nationalities For Monthly U.S. Southwest Border Encounters<br>
+       *Excluding Mexico*"
+  )+
+  theme_usaid_blue(bl = F,
+                   caption = cap$swb,
+                   base_size = 18,
+                   base_family = base_family,
+                   title_family = title_family) +
+  theme(legend.position = "right",
+        plot.title.position = "plot")
+swb_plot 
+# save the plot
+ggs(
+  plot = swb_plot,
+  folder =  "mu_charts",
+  category = "encounters",
+  subset = "swb",
+  demographics = NULL,
+  charttype = "ts",
+  additionalinfo = "smmult",
+  width = 300,
+  dpi = 200,
+  height = 200
+)
+```
+
+```{r LT TS}
+
+swb60 <- pdf_text("Encounter Data/swb60-20.PDF") %>% 
+  str_split(pattern = "\n") %>% 
+  map(~str_split(.," ")) %>% 
+  .[[1]] %>% 
+  map(~.[!. %in% ""]) %>% 
+  map(~.[c(1,11)]) %>% .[c(9:69)]
+
+swb60t <-tibble(fiscal_year = map_chr(swb60, ~pluck(.,1)),
+       enc = map_chr(swb60, ~pluck(.,2))) %>% 
+  mutate(across(enc, ~str_remove_all(., "[:punct:]"))) %>% 
+  mutate(across(everything(), as.numeric)) %>% 
+  rename(swb_apps = enc)
+
+apps<- read.csv("Encounter Data/apps_hist.csv") %>% 
+   t() %>% as_tibble(rownames = "x1") %>% 
+  mutate(x1 = str_remove(x1,"X"),
+         x1 = str_remove_all(x1,"\\.")) %>% 
+  pull(x1)
+
+cbp_hist <- tibble(fiscal_year = apps[1:length(apps)%%2 == 1],
+       apps = apps[1:length(apps)%% 2 == 0]) %>% 
+  mutate(across(c(fiscal_year,apps),as.numeric)) %>% 
+  arrange(fiscal_year) %>% 
+  filter(fiscal_year < 2020) %>% 
+  left_join(swb60t) %>% 
+  mutate(across(apps, ~ifelse(!is.na(swb_apps), swb_apps, .))) %>% 
+  select(-swb_apps) %>% 
+bind_rows(
+  cbp_all %>% 
+    filter(land_border_region == "Southwest Land Border") %>%
+    filter(component != "Office of Field Operations") %>% 
+    summarise(across(encounter_count,sum), .by = fiscal_year) %>% 
+  rename(apps = encounter_count)
+) %>% 
+  filter(fiscal_year <= 2024) %>% 
+  # make average monthly 
+  mutate(appsm = ifelse(fiscal_year == 2024, apps/(month(date2)+3), apps/12)) %>% 
+  arrange(fiscal_year)
+
+
+lt_ts_plot <- ggplot(cbp_hist, aes(x = fiscal_year, y = apps))+
+#geom_line()+
+  theme_usaid_blue(bl = F,base_size = 20,
+                   caption = paste("Nationwide encounters were recorded annually before 1960."))+
+  scale_y_continuous(
+    labels = seq(.5,1.5,.5) %>% c("",.,"2\nMillion"),
+    breaks = seq(0,2e6,5e5),
+                     #sec.axis = dup_axis(name = "")
+                     )+
+  scale_x_continuous(breaks = seq(1925, 2000, 25) %>% c(2024),
+                     labels = seq(1925, 2000, 25) %>% c("2024 YTD"),
+                    expand = expansion(mult = c(0.01, 0.1)))+
+  geom_point(data = . %>% filter(fiscal_year %in% c(2022,2023,2024
+                                                    
+                                                    )))+
+  pmap(list( 
+    #c(1954,2000,1986),
+            c(2022,2023,2024),
+       c(0,1,1),
+       c(0)),
+       ~geom_text_repel(data = . %>% filter(fiscal_year %in% ..1),
+             aes(label = round(apps/1e6,1) %>% paste0("M")),
+            nudge_y = 1e4,
+            nudge_x = ..2,
+            fontface = "bold",
+            box.padding = 0.9,# Increase padding around the labels
+            point.padding = 0.5, # Padding around the point to prevent overlap
+            force = 3, # Increase the force of repulsion to spread out labels
+            max.overlaps = 10, 
+            segment.linetype = "dotted",
+            min.segment.length = ..3))+
+  geom_rangeframe(sides = "bl")+
+  labs(title = "Migrants Apprehended Between Ports of Entry at the U.S. Southwest Border",
+       #<sup>1</sup>",
+       subtitle = "FY 1925 - FY 2024",
+       y = NULL,
+       x = NULL)+
+  coord_cartesian(xlim = c(1925,2025),ylim = c(0,2.3e6),
+                  clip = "off")+
+  theme(
+        panel.border = element_rect(size = 10, fill= NA, color = "transparent"),
+        plot.title.position = "plot",
+        plot.caption = element_textbox(size = 10))+
+  geom_xspline(
+    #width = .5
+
+    )
+
+ggs(
+  plot = lt_ts_plot,
+  category = "ltencounters",
+  subset = "swb",
+  demographics = NULL,
+  charttype = "ts",
+  additionalinfo = "fy24aug",
+  extension = ".jpg",
+  folder = "mu_charts",
+  width = 280,
+  height = 170
+)
+```
+
+```{r SWB_TS}
+
+swb_tsum <- swb_14 |>
+  mutate(fiscal_year = fiscal_year(date)) %>% 
+  filter(
+    #land_border_region == "Southwest Land Border",
+         #citizenship == "VENEZUELA"
+         ) |> 
+  summarise(across(encounter_count,sum),.by = c(date,fiscal_year)) %>% 
+  arrange(date)
+
+swb_ts_plot <- swb_tsum |> 
+  ggplot(aes(x = date, y = encounter_count)) +
+  
+  # Add Title and Labels
+  labs(
+    title = "Migrants Encountered at the U.S. Southwest Border",
+    subtitle = "Monthly Encounters <br> *(Thousands)*",
+    x = NULL,
+    y = NULL
+  ) +
+  geom_ribbon(
+  aes(ymin = 0, ymax = encounter_count),
+  fill = "lightblue",   # Specific color choice
+  alpha = 0.2,
+  inherit.aes = TRUE
+)+ 
+  # Plot Spline Line
+  geom_xspline() +
+  
+  # Highlight Specific Data Point
+  geom_point(
+    data = ~ .x |> filter(date == date2),
+    color = main_color_1,
+    size = 1
+  ) +
+  
+  # Add Dotted Segment at date2
+  geom_segment(
+    aes(
+      x = date2,
+      xend = date2 + 30,
+      y = encounter_count[date == date2],
+      yend = encounter_count[date == date2]
+    ),
+    color = "grey",
+    linetype = "dotted",
+    inherit.aes = FALSE,
+    data = ~ .x |> filter(date == date2)
+  ) +
+  
+  # Add Range Frames
+  geom_rangeframe(sides = "rb", color = "black") +
+  geom_rangeframe(sides = "br", color = "black") +
+  
+  # Add Rug on Right Side
+  geom_rug(
+    sides = "r",
+    length = unit(0.01, "npc")
+    # Uncomment and modify the next line if filtering is needed
+    # data = ~ .x |> filter(fiscal_year(date) >= 2023)
+  ) +
+  
+  # Configure Y-axis
+  scale_y_continuous(
+    breaks = c(
+      min(swb_tsum$encounter_count),
+      swb_tsum$encounter_count[swb_tsum$date == date2],
+      max(swb_tsum$encounter_count)
+    ),
+    labels = ~ floor(. / 1e3),
+    limits = c(0, 3.1e5),
+    expand = c(0, 0),
+    sec.axis = dup_axis(name = "")
+  ) +
+  
+  # Configure X-axis
+  scale_x_date(
+    breaks = seq.Date(as_date("2014-09-01"), as_date("2024-09-01"), by = "2 years"),
+    date_labels = "%b '%y",
+    minor_breaks = seq.Date(min(swb_tsum$date), date2, by = "month"),
+    limits = c(min(swb_tsum$date), max(swb_tsum$date))
+  ) +
+  
+  # Apply Custom Color Scale
+  scale_color_metro() +
+
+  # Set Coordinate Limits
+  coord_cartesian(
+    clip = "on",
+    xlim = c(min(swb_tsum$date), max(swb_tsum$date) + 30),
+    ylim = c(0, max(swb_tsum$encounter_count) * 1.01)
+  ) +
+  
+  # Apply Custom Theme
+  theme_usaid_blue(
+    caption = paste(cap$swb, "<br>"),
+    base_family = "Gill Sans",
+    bl = FALSE,
+    rf = FALSE,
+    base_size = 18
+  ) +
+  
+  # Further Theme Customizations
+  theme(
+    axis.text.y.left = element_blank(),
+    axis.ticks.y.left = element_blank(),
+    axis.title.y = element_markdown(family = "Gill Sans", halign = 0.5),
+    axis.minor.ticks.x.bottom = element_line(color = "grey")
+  ) +
+  
+  # Remove Color Legend and Adjust X-axis Guides
+  guides(
+    color = "none",
+    x = guide_axis(minor.ticks = TRUE)
+  )
+
+ggs(
+  plot = swb_ts_plot,
+  folder =  "mu_charts",
+  category = "encounters",
+  subset = "swb",
+  demographics = NULL,
+  charttype = "ts",
+  width = 300,
+  height = 170
+)
+
+
+
+```
+
+```{r SWB_monthly_TS}
+
+
+
+month_swbf <- read_csv(here("Encounter Data", "month_swbf (1).csv"))
+
+  
+
+month_swbf_plot <- month_swbf %>% 
+  bind_rows(
+    swb %>% 
+      filter(
+        component == "U.S. Border Patrol"
+        ) %>% 
+      summarise(across(encounter_count,sum),.by = date) %>% 
+      filter(date > max(month_swbf$date))
+  ) %>%
+  arrange(desc(date)) %>%
+  mutate(year = year(date)) %>% 
+  filter(year >=2000) %>% 
+  #filter(encounter_count == max(encounter_count), .by = year)
+  ggplot(aes(x = date, y = encounter_count))+
+  geom_xspline()+
+  theme_usaid_blue(bl = F,
+                   base_size = 19,
+                   caption = cap$swb %>% paste(" Chart updated", month(today(),abbr = T,label = T), year(today())))+
+  #geom_point(data = .%>% filter(date == max(date)))+
+  # geom_text_repel(aes(label = month(date, abbr = T,label = T),
+  #                     color = month(date, abbr = T, label = T)),
+  #           family = "Gill Sans",
+  #           direction = "x",
+  #           nudge_y = 1e4,
+  #           show.legend = F,
+  #           fontface = "bold",
+  #           size = 4,seed = 123,
+  #            data = . %>% filter(encounter_count == max(encounter_count),.by = year))+
+   # geom_point(data = . %>% filter(encounter_count == max(encounter_count),.by = year),
+   #           show.legend = F,
+   #           color = "black")+
+ geom_point(data = . %>% filter(date == max(date)),
+           show.legend = F,
+           color = "black")+
+  scale_color_viridis_d(option = "H")+
+  scale_y_continuous(breaks = seq(5e4,2.5e5,5e4),
+                     labels = seq(50,200,50) %>% c("250\nThousand"))+
+  scale_x_date(breaks = seq.Date(as_date("2000-01-01"), as_date("2024-01-01"), by = "5 years") %>% c("2024-01-01"),
+               minor_breaks = seq.Date(as_date("2000-01-01"), as_date("2024-01-01"), by = "1 month"), 
+               date_labels = "%Y")+
+  
+  theme(plot.title.position = "plot")+
+  labs(subtitle = "Monthly Apprehensions | 2000 - 2024",
+       y = NULL,
+       x = NULL,
+       title = "U.S. Southwest Border Apprehensions Between Ports of Entry")
+ggs(
+  plot = month_swbf_plot,
+  category = "apprehensions",
+  subset = "swb",
+  demographics = NULL,
+  additionalinfo = "monthly_2020",
+  folder = "mu_charts",
+  charttype = "ts",
+  width = 280,
+  height = 170
+)
+
+
+
+```
+
+```{r SWB_Tree_Month}
+swb_tree_plot <- swb|> 
+  filter(fiscal_year == 2024,
+         #month_abbv == toupper(month2)
+         ) |>
+  mutate(citizenship = ifelse(!citizenship %in% swb_lac, "OTHER", citizenship),
+         ) |> 
+  group_by(citizenship) |> 
+  summarise(across(encounter_count,sum)) |>
+  mutate(share = encounter_count/sum(encounter_count)*100,
+         citizenship = ifelse(share <1,"OTHER",citizenship)) |> 
+  group_by(citizenship) |> 
+  summarise(across(c(encounter_count,share),sum)) |>
+  #left_join(w) %>% 
+  ungroup() %>% 
+  mutate(other = ifelse(citizenship == "OTHER", NA, citizenship),
+         subregion = case_when(
+                               citizenship %in% c("MEXICO") ~ "Mexico",
+                               citizenship %in% c(nca, "NICARAGUA")~"nca",
+                               citizenship %in% c("VENEZUELA","COLOMBIA", "PERU", "ECUADOR", "BRAZIL")~"sa",
+                               T ~ "Other")
+         ) %>%
+  ggplot(aes(area = share,
+             fill = other,
+             subgroup = subregion,
+             label = ifelse(share > 3,
+                            paste0(str_to_title(citizenship),
+                                   # "\n ",
+                                   # ifelse(round(encounter_count/1e3,0)>0,
+                                   #        round(encounter_count/1e3,0),
+                                   #        "<1"),
+                                   # "K",
+                                   "\n",
+                                   round(share, 0),
+                                   "%"),
+                           paste0(str_to_title(citizenship),
+                                  " ",
+                                  # ifelse(round(encounter_count/1e3,0)>0,
+                                  #         round(encounter_count/1e3,0),
+                                  #         "<1"),
+                                  #  "K",
+                                   "\n",
+                                  round(share, 0),
+                                  "%"))))+
+  geom_treemap(size = 2, color = "white",start = "topleft")+
+  geom_treemap_subgroup_border(start = "topleft", color = "white",size = 4)+
+  geom_treemap_text(place = "center",
+                    grow = F,
+                    size = 18,
+                    start = "topleft",
+                    family = "Gill Sans",
+                    fontface = "bold",
+                    color = "white")+
+  guides(fill = "none")+
+  labs(title = paste("Migrants Encountered at the U.S. Southwest Border | Fiscal Year 2024"
+                     #month2_long,year2
+                     ))+
+  #scale_fill_metro(na.value = "grey60")+
+  scale_fill_cbp(na.value = "grey60")+
+  theme_usaid_blue(base_family = "Gill Sans",
+       caption = cap$swb,
+       base_size = 19)
+
+ggs(
+  plot = swb_tree_plot,
+  category = "encounters",
+  subset = "swb",
+  demographics = NULL,
+  charttype = "tree",
+  folder = "mu_charts",
+  width = 280,
+  height = 170
+)
+
+
+```
+
+```{r percent through CBPone}
+cbp_all %>% summarise(across(encounter_count,sum),
+                      .by = c(date,component,citizenship)) %>%
+  filter(citizenship %in% swb_lac) %>% 
+  ggplot(aes(x =date, y = encounter_count, color = component))+
+  facet_wrap(~citizenship, scales = "free")+
+  geom_line()+
+  theme_usaid_blue(bl = F, rf = F)
+cbp_all %>% summarise(across(encounter_count,sum),
+                      .by = c(date,component)) %>%
+  ggplot(aes(x =date, y = encounter_count, color = component))+
+  geom_line()+
+  theme_usaid_blue(bl = F, rf = F) 
+  
+```
+
+```{r SWB_Tree_Year}
+swb|> 
+  filter(fiscal_year == 2023,
+         ) |>
+  mutate(citizenship = ifelse(!citizenship %in% swb_lac, "OTHER", citizenship),
+         ) |> 
+  group_by(citizenship) |> 
+  summarise(across(encounter_count,sum)) |>
+  mutate(share = encounter_count/sum(encounter_count)*100,
+         citizenship = ifelse(share <1,"OTHER",citizenship)) |> 
+  group_by(citizenship) |> 
+  summarise(across(c(encounter_count,share),sum)) |>
+  #left_join(w) %>% 
+  ungroup() %>% 
+  mutate(other = ifelse(citizenship == "OTHER", NA, citizenship),
+         subregion = case_when(
+                               citizenship %in% c("MEXICO") ~ "Mexico",
+                               citizenship %in% c(nca, "NICARAGUA")~"nca",
+                               citizenship %in% c("VENEZUELA","COLOMBIA", "PERU", "ECUADOR", "BRAZIL")~"sa",
+                               T ~ "Other")
+         ) %>%
+  ggplot(aes(area = share,
+             fill = other,
+             subgroup = subregion,
+             label = ifelse(share > 3,
+                            paste0(str_to_title(citizenship),
+                                   # "\n ",
+                                   # ifelse(round(encounter_count/1e3,0)>0,
+                                   #        round(encounter_count/1e3,0),
+                                   #        "<1"),
+                                   # "K",
+                                   "\n",
+                                   round(share, 0),
+                                   "%"),
+                           paste0(str_to_title(citizenship),
+                                  " ",
+                                  # ifelse(round(encounter_count/1e3,0)>0,
+                                  #         round(encounter_count/1e3,0),
+                                  #         "<1"),
+                                  #  "K",
+                                   "\n",
+                                  round(share, 0),
+                                  "%"))))+
+  geom_treemap(size = 2, color = "white",start = "topleft")+
+  geom_treemap_subgroup_border(start = "topleft", color = "white",size = 4)+
+  geom_treemap_text(place = "center",
+                    grow = F,
+                    size = 18,
+                    start = "topleft",
+                    family = "Gill Sans",
+                    fontface = "bold",
+                    color = "white")+
+  guides(fill = "none")+
+  labs(title = paste("Migrants Encountered at the U.S. Southwest Border |",
+                     "CY",dt$year2))+
+  #scale_fill_metro(na.value = "grey60")+
+  scale_fill_cbp(na.value = "grey60")+
+  theme_usaid_blue(base_family = "Gill Sans",
+       caption = cap$swb,
+       base_size = 14)
+ggs(filename = "mu_charts/us_tree_year.jpg")
+
+```
+
+```{r SWB_Area}
+cbpa <- swb |>
+  select(citizenship,
+         date,
+         encounter_count) |>
+  mutate(citizenship = str_to_title(citizenship)) %>% 
+  mutate(citizenship = case_when(
+      citizenship %in% c("Honduras", "El Salvador", "Guatemala", "Cuba", "Nicaragua", "Venezuela", "Haiti") ~ citizenship,
+      citizenship %in% c(
+        "Mexico"
+      ) ~ citizenship,
+      T ~ "Other"
+    )) %>% 
+  mutate(citizenship = str_to_upper(citizenship)) %>% 
+  mutate(totenc = sum(encounter_count)) |> 
+  mutate(other = ifelse(citizenship == "OTHER", NA, citizenship),
+         subregion = case_when(
+                               citizenship %in% c("MEXICO") ~ "Mexico",
+                               citizenship %in% c(nca, "NICARAGUA")~"nca",
+                               citizenship %in% c("VENEZUELA",
+                                                  "COLOMBIA", 
+                                                  "PERU", 
+                                                  "ECUADOR",
+                                                  "BRAZIL")~"sa",
+                               citizenship %in% c("HAITI", "CUBA") ~"car",
+                               T ~ "Other") %>% as.factor(),
+         subregion = fct_relevel(subregion, "Mexico", "nca", "sa", "car", "Other")) %>% 
+  summarise(across(encounter_count,sum), .by = c(citizenship,date)) |> 
+  mutate(freq = encounter_count/sum(encounter_count), .by = date) %>% 
+  mutate(citizenship = fct_reorder(citizenship,freq, sum, .desc = F)) %>% 
+  mutate(csum = sum(freq, na.rm = T), .by = c(date))
+
+area_swb_pct_plot <- cbpa %>% 
+  ggplot(aes(x = date,
+             y = freq,
+             fill = citizenship))+
+  labs(title = "Migrants Encountered at the U.S. Southwest Border",
+       subtitle = "**Share of Encounters**",
+       y = NULL,
+       x = NULL,
+       fill = "**Nationality:**")+
+  geom_area(alpha = .8,)+
+  geom_line(position = "stack",
+            alpha = 1,
+            color = "white")+
+  theme_usaid_blue(caption = cap$swb, rf = F,
+                   main_color_1 = main_color_1,
+                   base_size = 15,
+                   bl = F)+
+  scale_x_date(breaks = (tm_db(month2,
+                               year0 = 2019,
+                               n = 1) %>% sort())[1:14],
+               date_labels = "%b '%y")+
+  scale_y_continuous(label= label_percent(),breaks = c(.25,.5,.75,1))+
+  scale_fill_cbp()+
+  scale_color_cbp()+
+  guides(color = "none", fill = "none")+
+  geom_rangeframe(position = "stack", sides = "b")+
+  geom_text_repel(data = .%>% filter(date == date2),
+                   aes(label = citizenship,
+                       color = citizenship),
+                  family = "Gill Sans",
+                  force = 10,
+                  force_pull = 0,
+                  position = position_stacknudge(x = 100,vjust = .5,
+                                                 direction = "split.y"),
+                  fontface = "bold",
+                  segment.linetype = "dotted",
+                  size = 3.8)+
+  theme(legend.position = "top",
+        legend.title = element_markdown(),
+        axis.ticks.y.right = element_blank(),
+        axis.text.y.right = element_blank()
+        )+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), date2+300),
+                  ylim = c(0,1.2)
+                  )
+
+ggs(
+  plot = area_swb_pct_plot, 
+  category = "encounters", 
+  charttype = "pctarea",
+  subset = "swb", 
+  demographics = "top", 
+  additionalinfo = NULL, 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+```
+
+```{r SWB_stream}
+cbpa <- swb |>
+  select(citizenship,
+         date,
+         encounter_count) |>
+  mutate(citizenship = str_to_title(citizenship)) %>% 
+  mutate(citizenship = case_when(
+      citizenship %in% c("Honduras", "El Salvador", "Guatemala") ~ "Northern\nCentral America",
+      citizenship %in% c("Cuba", "Nicaragua", "Venezuela", "Haiti") ~ "CHNV\nCountries",
+      citizenship %in% c(
+        "Mexico"
+      ) ~ citizenship,
+      T ~ "Other"
+    )) %>% 
+  mutate(citizenship = str_to_upper(citizenship)) %>% 
+  mutate(totenc = sum(encounter_count)) |> 
+  summarise(across(encounter_count,sum), .by = c(citizenship,date)) |> 
+  mutate(freq = encounter_count/sum(encounter_count), .by = date) %>% 
+  mutate(citizenship = fct_reorder(citizenship,freq, sum, .desc = F)) %>% 
+  mutate(csum = sum(freq, na.rm = T), .by = c(date))
+
+cbpa_stream <- cbpa %>% 
+  ggplot(aes(x = date,
+             y = encounter_count,
+             fill = citizenship))+
+  geom_stream(type = "proportional",color = "black",
+              alpha = .7,
+              bw = .65)+
+  geom_stream_label(aes(label = citizenship),
+                    family = "Gill Sans",
+                    fontface = "bold",
+                    type = "proportional",
+                    bw = .5,
+                    size = 5,
+                    fontface = "bold",
+                    color = "black")+
+  theme_usaid_blue(caption = paste0(cap$swb," Areas are Smoothed"),
+                   rf = F,
+                   main_color_1 = main_color_1,
+                   base_size = 20,
+                   bl = F)+
+  scale_x_date(breaks = (tm_db(month2,
+                               year0 = 2020,
+                               n = 1) %>% sort())[1:14],
+               date_labels = "%b '%y")+
+  scale_y_continuous(breaks = seq(0,1,length.out = 5),
+                     labels = label_percent())+
+  scale_fill_cbp()+
+  scale_color_cbp()+
+  guides(color = "none", fill = "none")+
+  geom_rangeframe(position = "stack", sides = "b")+
+  theme(legend.position = "none",
+        legend.title = element_markdown(),
+        axis.ticks.y = element_blank(),
+        axis.text.y.right = element_blank()
+        )+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), date2+50),
+                  ylim = c(0,1)
+                  )+
+  labs(x = NULL,
+       y = NULL,
+       title = "Share of Migrants Encountered at the U.S. Southwest Border")
+cbpa_stream
+ggs(
+  plot = cbpa_stream,
+  category = "encounters",
+  subset = "swb",
+  demographics = "cat",
+  charttype = "area",
+  additionalinfo = NULL,
+  folder = "mu_charts",
+  width = 280,
+  height = 170
+)
+```
+
+```{r}
+cbpa %>% 
+  mutate(group = case_when(citizenship %in% "MEXICO" ~ "MEXICO",
+                           citizenship %in% c(nca) ~ "NCA",
+                           citizenship %in% chnv ~ "CHNV",
+                           T ~ "ALL OTHERS")) %>% 
+  ggplot(aes(x = date,
+             y = freq,
+             fill = citizenship))+
+  facet_wrap(~group)+
+  gghighlight(calculate_per_facet = T,)+
+  labs(title = "Migrants Encountered at the U.S. Southwest Border",
+       subtitle = "**Share of Encounters**",
+       y = NULL,
+       x = NULL,
+       fill = "**Nationality:**")+
+  geom_area(alpha = .8,)+
+  geom_line(position = "stack",
+            alpha = 1,
+            color = "white")+
+  theme_usaid_blue(caption = cap$swb, rf = F,
+                   main_color_1 = main_color_1,
+                   base_size = 15,
+                   bl = F)+
+  scale_x_date(breaks = (tm_db(month2,
+                               year0 = 2019,
+                               n = 1) %>% sort())[1:14],
+               date_labels = "%b '%y")+
+  scale_y_continuous(label= label_percent(),breaks = c(.25,.5,.75,1))+
+  scale_fill_cbp()+
+  scale_color_cbp()+
+  guides(color = "none", fill = "none")+
+  geom_rangeframe(position = "stack", sides = "b")+
+  geom_text_repel(data = .%>% filter(date == date2),
+                   aes(label = citizenship,
+                       color = citizenship),
+                  family = "Gill Sans",
+                  force = 10,
+                  force_pull = 0,
+                  position = position_stacknudge(x = 100,vjust = .5,
+                                                 direction = "split.y"),
+                  fontface = "bold",
+                  segment.linetype = "dotted",
+                  size = 3.8)+
+  theme(legend.position = "right",
+        legend.title = element_markdown(),
+        axis.ticks.y.right = element_blank(),
+        axis.text.y.right = element_blank()
+        )+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), date2+300),
+                  ylim = c(0,1.2)
+                  )
+```
+
+```{r SWB_Area}
+cbpa <- swb |>
+
+  select(citizenship,
+         date,
+         encounter_count) |>
+  mutate(citizenship = str_to_title(citizenship)) %>% 
+  mutate(citizenship = case_when(
+      citizenship %in% c("Honduras", "El Salvador", "Guatemala", "Cuba", "Nicaragua", "Venezuela", "Haiti") ~ citizenship,
+      citizenship %in% c(
+        "Mexico"
+      ) ~ citizenship,
+      T ~ "Other"
+    )) %>% 
+  mutate(citizenship = str_to_upper(citizenship)) %>% 
+  mutate(totenc = sum(encounter_count)) |> 
+  mutate(other = ifelse(citizenship == "OTHER", NA, citizenship),
+         subregion = case_when(
+                               citizenship %in% c("MEXICO") ~ "Mexico",
+                               citizenship %in% c(nca, "NICARAGUA")~"nca",
+                               citizenship %in% c("VENEZUELA",
+                                                  "COLOMBIA", 
+                                                  "PERU", 
+                                                  "ECUADOR",
+                                                  "BRAZIL")~"sa",
+                               citizenship %in% c("HAITI", "CUBA") ~"car",
+                               T ~ "Other") %>% as.factor(),
+         subregion = fct_relevel(subregion, "Mexico", "nca", "sa", "car", "Other")) %>% 
+  summarise(across(encounter_count,sum), .by = c(citizenship,date)) |> 
+  mutate(freq = encounter_count/sum(encounter_count), .by = date) %>% 
+  mutate(citizenship = fct_reorder(citizenship,freq, sum, .desc = F)) %>% 
+  mutate(csum = sum(freq, na.rm = T), .by = c(date))
+
+swb_area_plot <- cbpa %>% 
+  ggplot(aes(x = date,
+             y = encounter_count,
+             fill = citizenship))+
+  labs(title = "Migrants Encountered at the U.S. Southwest Border",
+       subtitle = "**Share of Encounters**",
+       y = NULL,
+       x = NULL,
+       fill = "**Nationality:**")+
+  geom_area(
+    #data = . %>% filter(date < date1),
+            show.legend = F)+
+  # geom_chicklet(
+  #   data = . %>% 
+  #                 mutate(across(citizenship,fct_rev)) %>% 
+  #                 filter(date >= date1))+
+  #coord_cartesian(xlim = as_date(c("2021-01-01", "2024-02-01")))+
+  theme_usaid_blue(caption = cap$swb, rf = F,
+                   main_color_1 = main_color_1,
+                   base_size = 15,
+                   bl = F)+
+  scale_x_date(breaks = (tm_db(month2,
+                               year0 = 2019,
+                               n = 1) %>% sort())[1:14],
+               date_labels = "%b '%y")+
+  #scale_y_continuous(label= label_percent(),breaks = c(.25,.5,.75,1))+
+  scale_fill_cbp()+
+  scale_color_cbp()+
+  guides(color = "none", fill = "none")+
+  geom_rangeframe(position = "stack", sides = "b")+
+  geom_text_repel(data = .%>% filter(date == date2),
+                   aes(label = citizenship,
+                       color = citizenship),
+                  family = "Gill Sans",
+                  force = 7,
+                  direction = "y",
+                  force_pull = .2,
+                  position = position_stacknudge(x = 130,
+                                                 vjust = .5,
+                                                 direction = "split.y"),
+                  fontface = "bold",
+                  segment.linetype = "dotted",
+                  size = 3.8)+
+  theme(legend.position = "top",
+        legend.title = element_markdown(),
+        axis.ticks.y.right = element_blank(),
+        axis.text.y.right = element_blank()
+        )+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), date2+350),
+                  ylim = c(0,3.5e5)
+                  )+
+  scale_y_continuous(labels = ~./1e3)+
+  labs(title = "Migrants Encountered at the U.S. Southwest Border",
+       subtitle = "Encounters <br> *(Thousands)*",
+       y = NULL,
+       x = NULL,
+       fill = "**Nationality:**")+
+  geom_rangeframe(position = "stack")
+
+ggs(
+  plot = swb_area_plot, 
+  category = "encounters", 
+  charttype = "area",
+  subset = "swb", 
+  demographics = "top", 
+  additionalinfo = NULL, 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+```
+
+```{r SWB_TS_alltime}
+apps<- read.csv("Encounter Data/apps_hist.csv") %>% 
+   t() %>% as_tibble(rownames ="x1") %>% 
+  mutate(x1 = str_remove(x1,"X"),
+         x1 = str_remove_all(x1,"\\.")) %>% 
+  pull(x1)
+
+cbp_hist <- tibble(fiscal_year = apps[1:length(apps)%%2 == 1],
+       apps = apps[1:length(apps)%%2 == 0]) %>% 
+  mutate(across(c(fiscal_year,apps),as.numeric)) %>% 
+  arrange(fiscal_year) %>% 
+  filter(fiscal_year < 2020) %>% 
+bind_rows(
+  cbp_all %>% 
+    filter(land_border_region == "Southwest Land Border") %>% 
+    summarise(across(encounter_count,sum), .by = fiscal_year) %>% 
+  rename(apps = encounter_count)
+) %>% 
+  arrange(fiscal_year) %>% 
+  mutate(apps = ifelse(fiscal_year == 2024, apps/9, apps/12))
+ggplot(cbp_hist, aes(x = fiscal_year, y = apps))+
+#geom_line()+
+  theme_usaid_blue(bl = F,base_size = 15,
+                   caption = paste(cap$swb,"<br>","<sup>1</sup>Historical records prior to 2007 scoped to U.S. Border Patrol (USBP) apprehensions"))+
+  scale_y_continuous(labels = ~./1e3,
+                     breaks = seq(0,2.5e5,5e4),
+                     #sec.axis = dup_axis(name = "")
+                     )+
+  scale_x_continuous(breaks = seq(1925,2000,25) %>% c(2024))+
+  geom_point(data = . %>% filter(fiscal_year %in% c(2022,2023,2024
+                                                    #1954,2000,1986
+                                                    )))+
+  pmap(list(list(
+    #c(1954,2000,1986),
+            c(2022,2023,2024)),
+       c(
+         #0,
+         -4),
+       c(
+         #.5,
+         0)),
+       ~geom_text_repel(data = . %>% filter(fiscal_year %in% ..1),
+             aes(label = round(apps/1e3,1) %>% paste0("M")),
+            segment.linetype = "dotted",
+            nudge_y = 1e5,
+            nudge_x = ..2,
+            min.segment.length = ..3))+
+  geom_rangeframe(sides = "bl")+
+  labs(title = "Migrants Encountered at the U.S. Southwest Border",
+       #<sup>1</sup>",
+       subtitle = "*Thousands of Encounters (Monthly Average) | 1925 - 2024*",
+       y = NULL,
+       x = NULL)+
+  theme(panel.background = element_rect(fill = background, color = "transparent"),
+        plot.background = element_rect(fill = background,color = "transparent"))+
+  geom_xspline(
+    #width = .5
+    )
+ggs(filename = "mu_charts/monthly_avg_us.png",height = 125)
+```
+
+```{r SWB_TS_2007_Share}
+headerts07 <- "More Than 50% of Migrant Encounters at the U.S. Southwest Border Are From Outside Northern Central America and Mexico"
+
+
+fy_swb_19 <-read_csv("Encounter Data/mex_nca_2019fy_encounters.csv") %>% 
+  clean_names() %>% 
+  mutate(nca = el_salvador + guatemala + honduras,
+         other = total-mexico-nca) %>% 
+  select(fiscal_year,Other = other, Mexico = mexico,NCA = nca) %>% 
+  mutate(fiscal_year = str_extract(fiscal_year,"[:digit:]+") %>%
+           as.numeric()+2000) %>% 
+  summarise(across(everything(),sum),.by = fiscal_year) %>% 
+  pivot_longer(-fiscal_year,
+               names_to = "g1",
+               values_to = "encounter_count") %>% 
+  mutate(fy = as_factor(fiscal_year)) %>% 
+  mutate(freq = encounter_count/sum(encounter_count))
+
+
+fy_swb <- read_csv("Encounter Data/BP_fy_encounters.csv") %>% 
+  mutate(g1 = case_when(citizenship %in% "MEXICO" ~ "Mexico",
+                        citizenship %in% nca ~ "NCA",
+                      #citizenship %in% chnv ~  "CHNV",
+                     T ~ "Other")) %>%
+  summarise(across(southwest_border, \(x) sum(x,na.rm = T)), .by = c(g1,fiscal_year)) %>%
+  mutate(freq = southwest_border/sum(southwest_border), .by = fiscal_year,
+         fy = as_factor(fiscal_year)) %>% 
+  mutate(fy = fct_reorder(fy,fiscal_year,sum,.desc = T)) %>% 
+  rename(encounter_count = southwest_border) %>% 
+  bind_rows(fy_swb_19)
+
+
+
+fy_swb_20 <- swb %>%
+  filter(
+    #component != "Office of Field Operations"
+    ) %>% 
+  mutate(g1 = case_when(citizenship %in% "MEXICO" ~ "Mexico",
+                      citizenship %in% nca ~ "NCA",
+                      #citizenship %in% chnv ~  "CHNV",
+                      T ~ "Other")) %>%
+  summarise(across(encounter_count, \(x) sum(x,na.rm = T)), .by = c(g1,fiscal_year)) %>% 
+  mutate(freq = encounter_count/sum(encounter_count), .by = fiscal_year,
+         fy = as_factor(fiscal_year)) %>% 
+  mutate(fy = fct_reorder(fy,fiscal_year,sum,.desc = T))
+
+
+fy_swb_20 %>%
+  bind_rows(fy_swb) %>% 
+  mutate(fy = fct_reorder(fy,fiscal_year,sum,.desc = T)) %>% 
+  filter(
+    #fy %in% c(2023,2018,2013,2008)
+    ) %>% 
+  mutate(g1 = fct_relevel(g1, "Other","CHNV", "NCA", "Mexico")) %>% 
+  ggplot(aes(x = freq, y = fy, fill = g1))+
+  theme_usaid_blue(bl = F,caption = cap$swb,base_size = 16)+
+  theme(legend.position = "top",
+        #panel.grid.major.x = element_line(color = "white"),
+        )+
+  scale_fill_ptol()+
+  scale_color_ptol()+
+  scale_x_continuous(labels = label_percent())+
+  # geom_text(aes(label = g1),position = position_stack(vjust = .5),
+  #            data = . %>% filter(fy == 2023),
+  #           family = "Gill Sans",
+  #           fontface = "bold",
+  #           color = "cornsilk")+
+  geom_text_repel(aes(label = g1,color = g1),position = position_stacknudge(vjust = .5,y = 2),
+            data = . %>% filter(fy == 2007),
+            family = "Gill Sans",
+            fontface = "bold",
+            force = 100,
+            show.legend = F,
+            size = 6,
+            segment.curvature = -.5,
+            fontface = "bold")+
+  geom_rangeframe(position = "stack")+
+  labs(y = NULL,
+       x = NULL,
+       # title = "Migrants Apprehended at the U.S. Southwest Border Between Ports of Entry",
+       title = headerts07,
+       subtitle = "Share of Total by Fiscal Year",
+       fill = NULL)+
+  
+  coord_cartesian(clip = "off",expand = F,xlim = c(0,1.1))+
+  theme(plot.margin = unit(c(5,15,3,3),units = "mm"),
+        axis.text.y = element_text(family = "Gill Sans",
+                                   face = "bold",
+                                   size = 16))+
+  theme(panel.background = element_rect(fill = "transparent", color = "transparent"),
+        plot.background = element_rect(fill = "transparent",color = "transparent"))+
+  geom_col(
+      show.legend = F
+    )
+ggs(height = 200, filename = "plt1.png")
+```
+
+```{r}
+shelf(ggstream)
+fy_swb_20 %>%
+  bind_rows(fy_swb) %>% 
+  ggplot(aes(fiscal_year,encounter_count,fill = g1))+
+  geom_stream(
+    type = "ridge"
+    )+
+  geom_stream_label(aes(label = g1),
+                    type = "proportional")+
+  theme_void()+guides(fill = "none")
+```
+
+```{r by POE all borders}
+swb_tsum <- cbp_all |>
+  filter(
+    #land_border_region == "Southwest Land Border",
+    citizenship == "VENEZUELA",
+         fiscal_year >= 2019) %>%
+  summarise(across(encounter_count,sum), .by = c(date,fiscal_year,component)) %>% 
+  mutate(lab2 = ifelse(component == "U.S. Border Patrol", "Between Ports of Entry", "At Ports of Entry"))
+
+component_plot <- swb_tsum %>% 
+  ggplot(aes(x = date,y = encounter_count,color = component))+
+  labs(title = "Venezuelan Migrants Encountered at all U.S. Borders and Ports of Entry",
+       subtitle = "Monthly Encounters <br> *(Thousands)*",
+       x = NULL,
+       y = NULL)+
+  geom_xspline()+
+  scale_y_continuous(
+    # breaks = c(min(ne_tsum$encounter_count),
+    #                             ne_tsum$encounter_count[which(ne_tsum$date == date2)]
+    #                             #max(ne_tsum$encounter_count)
+    #                             ),
+                     labels = ~floor(./1e3),
+                     limits = c(0,3e5),
+                     #sec.axis = dup_axis(name = "")
+                     )+
+  scale_color_metro(aesthetics = c("fill", "color"))+
+  scale_x_date(breaks = tm_db(month = month2, year0 = 2018, n =1), date_labels = "%b '%y")+
+  guides(color = "none")+
+  coord_cartesian(clip = "off")+
+  theme_usaid_blue(caption = paste(cap$swb,"<br>",
+                                   "Encounters at Ports of Entry defined as OFO inadmissables and between ports of entry as USBP apprehensions"),
+                   base_family = base_family, 
+                   bl = F,
+                   base_size = 19)+
+  theme(
+    axis.title.y = element_markdown(family = base_family, halign = .5),
+    legend.position = "top")+
+  geom_point(data = . %>% filter(date == date2)) +
+  scale_color_metro()+
+  guides(color = "none")+
+  coord_cartesian(clip = "off",
+                  xlim = c(min(swb_tsum$date), max(swb_tsum$date) + 350),
+                  ylim = range(swb_tsum$encounter_count) * 1.01)+
+  geom_text_repel(data = . %>% filter(date == max(date)),
+                   aes(label = lab2),
+                  segment.linetype = "dotted",
+                  hjust = 0 ,
+                  nudge_x = 50,
+                  size = 4.3,
+                  fontface = "bold",
+                  family = "Gill Sans",
+                  direction = "y")
+  
+ggs(
+  plot = component_plot,
+  category = "encounters",
+  subset = "swb",
+  demographics = "component",
+  charttype = "spaghetti",
+  folder = "ven_charts",
+  width = 280,
+  dpi = 300,
+  height = 150
+)
+
+```
+
+### Country Level
+
+```{r ts_graph function}
+country_ts_graph <- function(country, adjective,breaks = NULL,...){
+
+swb2 <- swb |> 
+   filter(citizenship %in% c(country)) |> 
+  arrange(date) |> 
+  group_by(date,citizenship,demographic) |> 
+  summarise(across(encounter_count,sum),.groups = "drop_last") |> 
+  #mutate(encounter_count = encounter_count / sum(encounter_count)*100) |>
+  pivot_wider(names_from = demographic,values_from = encounter_count) |> 
+  mutate(across(c(`UC / Single Minors`, `Accompanied Minors`, `FMUA`),~ifelse(is.na(.),0,.)),
+         ) |> 
+  pivot_longer(-c(date,citizenship)) |> 
+  ungroup() |> 
+  mutate(across(citizenship, str_to_title),
+         citizenship = fct_reorder(citizenship,value,sum,.desc = T),
+         label = case_when(name == "UC / Single Minors" ~ "Unaccompanied\nMinors",
+                           name == "FMUA" ~ "Family Units",
+                           T ~ name),
+         label = fct_relevel(label,"Accompanied Minors","Unaccompanied\nMinors","Family Units", "Single Adults")
+         ) |>
+  group_by(date) |> 
+  mutate(summig = sum(value))
+swb2 |> 
+  ggplot(aes(x = date, y = value, fill = label))+
+  #geom_area(alpha = .7)+
+  #geom_line(position = "stack", color = 'grey70', size = .5)+
+  geom_chicklet(data = . %>% mutate(across(label,fct_rev)))+
+  #geom_vline(xintercept = as.Date("2022-01-01"), color = "grey70", linetype = "dotted") +
+  labs(subtitle = "Monthly Encounters <br> *(Thousands)*",
+       x = NULL,
+       y = NULL,
+       title = paste(adjective, "Migrant Encounters at the U.S. Southwest Border"),
+       fill = NULL)+
+  coord_cartesian(expand = F,
+                  clip = "off",
+                  xlim = c(as.Date("2019-10-01")-30,
+                           as.Date(date2)+300))+
+  theme_usaid_blue(base_family = "Gill Sans", 
+                   base_size = 18,
+                   caption = cap$swb, rf = F, bl = F)+
+  scale_y_continuous(labels = ~round(./1e3,0),
+                     breaks =  c(
+                                min(swb2$summig),
+                                swb2$summig[which(swb2$date == date2)],
+                                max(swb2$summig)),
+                     #sec.axis = dup_axis(name = "")
+                     )+
+  {if(!is.null(breaks)) scale_y_continuous(breaks = breaks, 
+                                           labels = ~round(./1000,1),
+                                           sec.axis = dup_axis(name = ""))}+
+  scale_x_date(breaks = tm_db(month2, n = 1), date_labels = "%b %y")+
+  
+  #facet_wrap(~citizenship,nrow = 3,strip.position = "bottom")+
+  # theme(panel.background = element_rect(color = "grey80"),
+  #       panel.grid.major.y = element_line(colour = "grey90", linetype = "dotted"))+
+  guides(fill = "none",
+         color = "none"
+           #guide_legend(direction = "vertical",reverse = T)
+         )+
+  theme(legend.position = "right",
+        axis.title.y = element_markdown(family = "Gill Sans"),
+        axis.text.y.right = element_blank(),
+        text = element_text(family = "Gill Sans"),
+        plot.title.position = "plot",
+        plot.subtitle = element_textbox_simple(margin = margin(5,5,10,5), family = "Gill Sans"),
+        plot.margin = unit(c(1,3,1,1), "cm"),
+        plot.caption = element_textbox(margin = margin(5,5,5,5)))+
+  scale_fill_metro(breaks = c("Single Adults","Family Units", "Unaccompanied Minors"),
+                   aesthetics = c("color","fill"),...)+
+  geom_text_repel(position = position_stacknudge(x = 170,
+                                                 vjust = .5, 
+                                                 direction = "split.y"),
+                   data = . %>% filter(date == date2,
+                                       label != "Accompanied Minors"),
+                   xlim = c(as.Date("2019-10-01")-30,
+                           as.Date(date2)+400),
+                   hjust = .5,
+                   segment.linetype = "dotted",
+                   size = 4,
+                   fontface = "bold",
+                   family = "Gill Sans",
+                   aes(label = label, color = label))+
+  geom_rangeframe(color = "grey50", sides = "bl", position = "stack")
+
+}
+```
+
+```{r SWB_Mexico}
+mexico_bar_plot <- country_ts_graph("MEXICO", "Mexican")
+ggs(
+  plot = mexico_bar_plot, 
+  category = "encounters", 
+  charttype = "sbar",
+  subset = "swb", 
+  demographics = "mexico", 
+  additionalinfo = NULL, 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+```
+
+```{r SWB_nca_combined}
+
+swb2 <- swb |> 
+   filter(citizenship %in% c("EL SALVADOR", "HONDURAS", "GUATEMALA")) |> 
+  arrange(date) |> 
+  summarise(across(encounter_count,sum),.by = c(date,demographic)) |> 
+  #mutate(encounter_count = encounter_count / sum(encounter_count)*100) |>
+  pivot_wider(names_from = demographic,values_from = encounter_count) |> 
+  mutate(across(c(`UC / Single Minors`, `Accompanied Minors`, `FMUA`),~ifelse(is.na(.),0,.)),
+         ) |> 
+  pivot_longer(-c(date)) |> 
+  ungroup() %>% 
+  mutate(
+         label = case_when(name == "UC / Single Minors" ~ "Unaccompanied\nMinors",
+                           name == "FMUA" ~ "Family Units",
+                           T ~ name),
+         label = fct_relevel(label,"Accompanied Minors","Unaccompanied\nMinors","Family Units", "Single Adults")
+         ) |>
+  group_by(date) |> 
+  mutate(summig = sum(value))
+
+nca_bar_plot <- swb2 |> 
+  ggplot(aes(x = date, y = value, fill = label))+
+  # geom_col()+
+  geom_chicklet(data = . %>% mutate(across(label,fct_rev)))+
+
+  labs(subtitle = "Monthly Encounters <br> *(Thousands)*",
+       x = NULL,
+       y = NULL,
+       title = paste("Northern Central American","Migrant Encounters <br> at the U.S. Southwest Border"),
+       fill = NULL)+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01")-30, as.Date(date2)+220)
+                  )+
+  theme_usaid_blue(base_family = "Gill Sans", caption = cap$swb, rf = F, bl = F,
+                   base_size = 17)+
+  scale_y_continuous(labels = ~round(./1e3,0),
+                     breaks =  c(
+                                 min(swb2$summig),
+                                swb2$summig[which(swb2$date == date2)],
+                                max(swb2$summig)),
+                     #sec.axis = dup_axis(name = "")
+                     )+
+  scale_x_date(breaks = tm_db(month2, n = 1), date_labels = "%b '%y")+
+  geom_rangeframe(color = "grey50", sides = "bl", position = "stack")+
+
+  guides(fill = guide_legend(direction = "horizontal"))+
+  theme(legend.position = "top",
+        axis.title.y = element_markdown(family = "Gill Sans"),
+        text = element_text(family = "Gill Sans"),
+        plot.subtitle = element_textbox_simple(margin = margin(5,5,10,5), family = "Gill Sans"),
+        plot.caption = element_textbox(margin = margin(5,5,5,5)))+
+  geom_rangeframe(color = "grey50", sides = "bl", position = "stack")+
+  geom_text_repel(position = position_stacknudge(x = 200,
+                                                 vjust = .5, 
+                                                 direction = "split.y"),
+                   data = . %>% filter(date == date2,
+                                       label != "Accompanied Minors"),
+                   xlim = c(as.Date("2019-10-01")-30,
+                           as.Date(date2)+300),
+                   hjust = .5,
+                   segment.linetype = "dotted",
+                   size = 4,
+                   fontface = "bold",
+                   family = "Gill Sans",
+                   aes(label = label, color = label))+
+
+  guides(fill = "none",color = "none")+
+  theme(legend.position = "top",
+        axis.title.y = element_markdown(family = "Gill Sans"),
+        axis.text.y.right = element_blank(),
+        text = element_text(family = "Gill Sans"),
+        plot.title.position = "plot",
+        plot.margin = unit(c(1,3,1,1),units = "cm"),
+        plot.subtitle = element_textbox_simple(margin = margin(5,5,10,5), family = "Gill Sans"),
+        plot.caption = element_textbox(margin = margin(5,5,5,5)))+
+  scale_fill_metro(breaks = c("Single Adults","Family Units", "Unaccompanied Minors"),
+                   aesthetics = c("fill", "color"))
+ggs(
+  plot = nca_bar_plot, 
+  category = "encounters", 
+  charttype = "sbar",
+  subset = "swb", 
+  demographics = "nca", 
+  additionalinfo = NULL, 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+```
+
+```{r SWB_OTHER_combined}
+swb2 <- swb |> 
+   filter(!citizenship %in% c("MEXICO", "EL SALVADOR", "HONDURAS", "GUATEMALA")) |> 
+  arrange(date) |> 
+  summarise(across(encounter_count,sum),.by = c(date,demographic)) |> 
+  #mutate(encounter_count = encounter_count / sum(encounter_count)*100) |>
+  pivot_wider(names_from = demographic,values_from = encounter_count) |> 
+  mutate(across(c(`UC / Single Minors`, `Accompanied Minors`, `FMUA`),~ifelse(is.na(.),0,.)),
+         ) |> 
+  pivot_longer(-c(date)) |> 
+  ungroup() %>% 
+  mutate(
+         label = case_when(name == "UC / Single Minors" ~ "Unaccompanied\nMinors",
+                           name == "FMUA" ~ "Family Units",
+                           T ~ name),
+         label = fct_relevel(label,"Accompanied Minors","Unaccompanied\nMinors","Family Units", "Single Adults")
+         ) |>
+  group_by(date) |> 
+  mutate(summig = sum(value))
+
+other_bar_plot <- swb2 |> 
+  ggplot(aes(x = date, y = value, fill = label))+
+    geom_chicklet(data = . %>% mutate(across(label,fct_rev)))+
+
+  labs(subtitle = "Monthly Encounters <br> *(Thousands)*",
+       x = NULL,
+       y = NULL,
+       title = paste("All Other","Migrant Encounters at the U.S. Southwest Border"),
+       fill = NULL)+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01")-30, as.Date(date2)+220)
+                  )+
+  theme_usaid_blue(base_family = "Gill Sans", caption = cap$swb, rf = F, bl = F,
+                   base_size = 18)+
+  scale_y_continuous(labels = ~round(./1e3,0),
+                     breaks =  c(
+                                 min(swb2$summig),
+                                swb2$summig[which(swb2$date == date2)],
+                                max(swb2$summig)),
+                     #sec.axis = dup_axis(name = "")
+                     )+
+  scale_x_date(breaks = tm_db(month2, n = 1), date_labels = "%b '%y")+
+  geom_rangeframe(color = "grey50", sides = "bl", position = "stack")+
+
+  guides(fill = guide_legend(direction = "horizontal"))+
+  theme(legend.position = "top",
+        axis.title.y = element_markdown(family = "Gill Sans"),
+        text = element_text(family = "Gill Sans"),
+        plot.subtitle = element_textbox_simple(margin = margin(5,5,10,5), family = "Gill Sans"),
+        plot.caption = element_textbox(margin = margin(5,5,5,5)))+
+  geom_rangeframe(color = "grey50", sides = "bl", position = "stack")+
+  geom_text_repel(position = position_stacknudge(x = 220,
+                                                 vjust = .5, 
+                                                 direction = "split.y"),
+                   data = . %>% filter(date == date2,
+                                       !label %in% c("Accompanied Minors"
+                                                     )),
+                   xlim = c(as.Date("2019-10-01")-30,
+                           as.Date(date2)+400),
+                   hjust =.5,
+                   segment.linetype = "dotted",
+                   size = 4,
+                   fontface = "bold",
+                   family = "Gill Sans",
+                   aes(label = label, color = label))+
+
+  guides(fill = "none",color = "none")+
+  theme(legend.position = "top",
+        axis.title.y = element_markdown(family = "Gill Sans"),
+        axis.text.y.right = element_blank(),
+        text = element_text(family = "Gill Sans"),
+        plot.title.position = "plot",
+        plot.margin = unit(c(1,3,1,1),units = "cm"),
+        plot.subtitle = element_textbox_simple(margin = margin(5,5,10,5), family = "Gill Sans"),
+        plot.caption = element_textbox(margin = margin(5,5,5,5)))+
+  scale_fill_metro(breaks = c("Single Adults","Family Units", "Unaccompanied Minors"),
+                   aesthetics = c("fill", "color"))
+ggs(
+  plot = other_bar_plot, 
+  category = "encounters", 
+  charttype = "sbar",
+  subset = "swb", 
+  demographics = "Other", 
+  additionalinfo = NULL, 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+```
+
+### Regional TS
+
+```{r NCA}
+nca_ltsg <- nca_lts %>%
+  mutate(date = as.Date(date)) %>% 
+  select(-c(fiscal_year,month, year)) %>% 
+  rename("HONDURAS" = honduras,"EL SALVADOR" = el_salvador, "GUATEMALA" = guatemala) %>% 
+  filter(date < "2019-10-01") %>% 
+  pivot_longer(-date, names_to = "citizenship", values_to = "encounter_count") %>% 
+  bind_rows(swb %>% select(date,citizenship,encounter_count) %>% 
+              filter(citizenship %in% c("HONDURAS", "GUATEMALA", "EL SALVADOR")) %>% 
+            summarise(across(encounter_count,sum), .by = c(date,citizenship))
+            )  |>
+  mutate(year = year(date)) %>% 
+  complete(date,citizenship,fill = list(encounter_count = 0)) %>%
+  mutate(across(encounter_count, ~ifelse(citizenship == "MEXICO" & . == 0,NA,.)))
+
+usbp <- pull_usbp() %>% 
+  filter(citizenship %in% c(nca,"NICARAGUA"))
+  #summarise(across(encounter_count,sum), .by = date) %>% 
+nca_ltsg_plot <- usbp %>%  
+ggplot(aes(x = date, y = encounter_count, 
+             color = citizenship
+             ))+
+  geom_xspline()+
+  #geom_line(position = "stack", color = 'grey70', size = .5)+
+  #geom_vline(xintercept = as.Date("2022-01-01"), color = "grey70", linetype = "dotted") +
+  labs(subtitle = "Monthly Encounters <br> *(Thousands)*",
+       x = NULL,
+       y = NULL,
+       title = "Northern Central America Migrant Encounters at the U.S. Southwest Border",
+       fill = "**Nationality:**")+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2017-10-01"), as.Date(date2)+375)
+                  )+
+  theme_usaid_blue(base_family = "Gill Sans", caption = cap$swb, rf = F, base_size = 17)+
+  scale_y_continuous(labels = label_number(scale = 1/1000),
+                     limits = c(0,max(nca_ltsg$encounter_count)) 
+                     # sec.axis = sec_axis(labels = label_number(scale = 1/1000),trans = ~.,
+                     #                     breaks = seq(2e4,8e4,length.out = 4),
+                     #                     name = "")
+                     )+
+  scale_x_date(breaks = tm_db(month2, n = 1, year0 = 2018),
+               date_labels = "%b '%y",
+               minor_breaks = seq.Date(as_date("2017-10-01"),date2,by = "month"))+
+  guides(x = guide_axis(minor.ticks = T))+
+  geom_rangeframe(color = "grey50", sides = "bl",
+                  data = . %>% drop_na())+
+  # geom_flag(data = . %>% filter(date == date2),
+  #           aes(country = fips),
+  #           size = 3)+
+  theme(panel.grid.major.y = element_blank())+
+  geom_point(data = . %>% filter(date == date2))+
+  geom_text_repel(data = . %>% filter(date == date2),
+                  aes(label = str_to_title(citizenship)),
+                  nudge_x = 140,
+                  direction = "y",
+                  force = 3,
+                  size = 4,
+                  fontface = "bold",
+                  family = "Gill Sans",
+                  segment.linetype = "dotted") +
+  #facet_wrap(~citizenship,nrow = 3,strip.position = "bottom")+
+  # theme(panel.background = element_rect(color = "grey80"),
+  #       panel.grid.major.y = element_line(colour = "grey90", linetype = "dotted"))+
+  guides(fill = guide_legend(direction = "horizontal"),
+         color = "none")+
+  theme(axis.minor.ticks.x.bottom = element_line(color = "grey"))+
+  scale_color_cbp()
+ggs(
+  plot = nca_ltsg_plot, 
+  category = "encounters", 
+  charttype = "spag",
+  subset = "nca", 
+  demographics = NULL, 
+  additionalinfo = NULL, 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+```
+
+```{r NCA per cap}
+
+nca_pc_plot <- swb %>% 
+  select(date, citizenship, encounter_count) %>%
+  filter(citizenship %in% c("HONDURAS", "GUATEMALA", "EL SALVADOR", "MEXICO")) %>%
+  summarise(across(encounter_count, sum), .by = c(date, citizenship))  |>
+  left_join(sup$pop23) %>% 
+  mutate(percap_count = (encounter_count/pop)*1e3) %>%
+  ggplot(aes(x = date, y = percap_count, 
+             color = citizenship
+             ))+
+  geom_xspline()+
+  labs(subtitle = "Monthly Encounters <br> *(Per 1000 Population)*",
+       x = NULL,
+       title = "Per Capita Migrant Encounters at the U.S. Southwest Border <br>
+       From Northern Central America and Mexico",
+       y = NULL,
+       fill = "**Nationality:**")+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), 
+                           as.Date(date2)+350)
+                  )+
+  theme_usaid_blue(base_family = "Gill Sans", caption = cap$swb, rf = F, base_size = 18)+
+  scale_y_continuous(
+    #labels = label_number(scale = 1/1000),
+                     #breaks = seq(1e4,5e4,length.out = 5),
+                     # sec.axis = sec_axis(labels = label_number(scale = 1/1000),trans = ~.,
+                     #                     breaks = seq(2e4,8e4,length.out = 4),
+                     #                     name = "")
+                     )+
+  scale_x_date(seq(as_date("2014-09-01"), as_date("2024-09-01"), by = "2 years"),
+               date_labels = "%b '%y")+
+  geom_rangeframe(color = "grey50", sides = "bl")+
+  # geom_flag(data = . %>% filter(date == date2),
+  #           aes(country = fips),
+  #           size = 3)+
+  theme(panel.grid.major.y = element_blank())+
+  geom_point(data = . %>% filter(date == date2))+
+  geom_text_repel(data = . %>% filter(date == date2),
+                  aes(label = citizenship),
+                  nudge_x = 130,
+                  direction = "y",
+                  force = 5,
+                  size = 3.8,
+                  fontface = "bold",
+                  family = "Gill Sans",
+                  segment.linetype = "dotted") +
+  #facet_wrap(~citizenship,nrow = 3,strip.position = "bottom")+
+  # theme(panel.background = element_rect(color = "grey80"),
+  #       panel.grid.major.y = element_line(colour = "grey90", linetype = "dotted"))+
+  guides(fill = guide_legend(direction = "horizontal"),
+         color = "none")+
+  theme()+
+  scale_color_cbp()
+
+
+ggs(
+  plot = nca_pc_plot, 
+  category = "encounters", 
+  charttype = "spag",
+  subset = "swb", 
+  demographics = "nca", 
+  additionalinfo = "pc",
+  extension = ".png", 
+  folder = "rsc", 
+  width = 250, 
+  height = 150,
+)
+```
+
+```{r NCA top5 other}
+top5 <- swb |>
+  filter(!citizenship %in% c("MEXICO", "EL SALVADOR", "GUATEMALA", "HONDURAS", "OTHER"),
+         fiscal_year == 2023) %>% 
+  summarise(across(encounter_count,sum), .by = citizenship) %>% 
+  slice_max(encounter_count,n = 5) %>% 
+  pull(citizenship)
+
+top5_other_plot <- swb %>% 
+  filter(citizenship %in% top5) %>% 
+  mutate(across(citizenship,str_to_title)) |> 
+  group_by(date,year, month_abbv,citizenship) |> 
+  summarise(across(encounter_count,sum)) |>
+  # left_join(cc_raw |> select(citizenship = official_name_en, fips = iso3166_1_alpha_2)) |> 
+  # mutate(fips = fips |> tolower()) |> 
+  mutate(citizenship = fct_reorder(citizenship,encounter_count,sum)) |> 
+  ggplot(aes(x = date, y = encounter_count, color = citizenship))+
+  geom_xspline()+
+
+  labs(y = NULL,
+       x = NULL,
+       title = "Migrant Encounters at the U.S. Southwest Border",
+       subtitle = "Top 5 Countries Outside of Mexico and Northern Central America",
+       fill = "**Nationality:**")+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), as.Date(date2)+300)
+                  )+
+  theme_usaid_blue(base_family = "Gill Sans",base_size = 18,caption = cap$swb, rf = F, bl = F)+
+  scale_y_continuous(
+                     breaks = seq(2e4,6e4,length.out = 3),
+                     labels = c("20","40","60\nThousand"),
+                     # sec.axis = sec_axis(labels = label_number(scale = 1/1000),trans = ~.,
+                     #                     breaks = seq(2e4,8e4,length.out = 4),
+                     #                     name = "")
+                     )+
+  scale_x_date(breaks = tm_db(month2,year0 = 2019, n = 1)[tm_db(month2,year0 = 2019)<=as.Date(date2)],
+               date_labels = "%b %y")+
+  geom_rangeframe(color = "grey50", sides = "bl")+
+  # geom_flag(data = . %>% filter(date == date2),
+  #           aes(country = fips),
+  #           size = 3)+
+  geom_point(data = . %>% filter(date == date2))+
+  geom_text_repel(data = . %>% filter(date == date2),
+                  aes(label = citizenship),
+                  nudge_x = 150,
+                  #direction = "x",
+                  force = 20,
+                  size = 3.8,
+                  family = "Gill Sans",
+                  fontface = "bold",
+                  segment.linetype = "dotted") +
+  #facet_wrap(~citizenship,nrow = 3,strip.position = "bottom")+
+  # theme(panel.background = element_rect(color = "grey80"),
+  #       panel.grid.major.y = element_line(colour = "grey90", linetype = "dotted"))+
+  guides(fill = guide_legend(direction = "horizontal"),
+         color = "none")+
+  theme()+
+  scale_color_cbp()
+ggs(
+  plot = top5_other_plot, 
+  category = "encounters", 
+  charttype = "spag",
+  subset = "swb", 
+  demographics = "top5other", 
+  additionalinfo = NULL, 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+```
+
+```{r TOP 5 per cap}
+top5 <- swb |> 
+  filter(!citizenship %in% c("MEXICO", "EL SALVADOR", "GUATEMALA", "HONDURAS", "OTHER"),
+         fiscal_year == 2023) %>% 
+  summarise(across(encounter_count,sum), .by = citizenship) %>% 
+  slice_max(encounter_count,n = 5) %>% 
+  pull(citizenship)
+us_other5pc_ts <- swb %>% 
+  select(date, citizenship, encounter_count) %>%
+  filter(citizenship %in% top5) %>%
+  summarise(across(encounter_count, sum), .by = c(date, citizenship))  |>
+  left_join(sup$pop23) %>% 
+  mutate(percap_count = (encounter_count/pop)*1e3) %>%
+  ggplot(aes(x = date, y = percap_count, 
+             color = citizenship
+             ))+
+  geom_xspline()+
+  labs(subtitle = "Top 5 Countries Outside of Mexico and Northern Central America <br><br> Monthly Encounters <br> *(Per 1000 Population)*",
+       x = NULL,
+       title = "Per Capita Migrant Encounters at the U.S. Southwest Border",
+       y = NULL,
+       fill = "**Nationality:**")+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), 
+                           as.Date(date2)+375)
+                  )+
+  theme_usaid_blue(base_family = "Gill Sans", caption = cap$swb, rf = F, base_size = 18)+
+  scale_y_continuous(
+    #labels = label_number(scale = 1/1000),
+                     #breaks = seq(1e4,5e4,length.out = 5),
+                     # sec.axis = sec_axis(labels = label_number(scale = 1/1000),trans = ~.,
+                     #                     breaks = seq(2e4,8e4,length.out = 4),
+                     #                     name = "")
+                     )+
+  scale_x_date(breaks = tm_db(month2, n = 1, year0 = 2019),
+               date_labels = "%b '%y")+
+  geom_rangeframe(color = "grey50", sides = "bl")+
+  # geom_flag(data = . %>% filter(date == date2),
+  #           aes(country = fips),
+  #           size = 3)+
+  theme(panel.grid.major.y = element_blank())+
+  geom_point(data = . %>% filter(date == date2))+
+  geom_text_repel(data = . %>% filter(date == date2),
+                  aes(label = str_to_title(citizenship)),
+                  nudge_x = 150,
+                  direction = "y",
+                  force = 3,
+                  size = 3.7,
+                  fontface = "bold",
+                  family = "Gill Sans",
+                  segment.linetype = "dotted") +
+  #facet_wrap(~citizenship,nrow = 3,strip.position = "bottom")+
+  # theme(panel.background = element_rect(color = "grey80"),
+  #       panel.grid.major.y = element_line(colour = "grey90", linetype = "dotted"))+
+  guides(fill = guide_legend(direction = "horizontal"),
+         color = "none")+
+  theme()+
+  scale_color_cbp()
+ggs(
+  plot = us_other5pc_ts, 
+  category = "encounters", 
+  charttype = "spag",
+  subset = "swb", 
+  demographics = "top5other", 
+  additionalinfo = "pc", 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+   
+```
+
+```{r NCA CHNV}
+swb |>
+  left_join(sup$pop23) %>% 
+  mutate(encounter_count = encounter_count) %>% 
+  summarise(across(encounter_count,sum), .by = c(date, month_abbv,citizenship)) %>% 
+  mutate(citizenship = case_when(citizenship %in% c("HONDURAS", "GUATEMALA", "EL SALVADOR")~"Northern \nCentral \nAmerica",
+                                 citizenship %in% c("CUBA", "HONDURAS", "NICARAGUA", "VENEZUELA") ~ "CHNV\nCountries",
+                                 T ~ "All Others")) |> 
+  filter(citizenship != "All Others") %>% 
+  group_by(date, month_abbv,citizenship) |> 
+  summarise(across(encounter_count,sum)) |> 
+  mutate(citizenship = fct_reorder(citizenship,encounter_count,sum)) %>% 
+  ggplot(aes(x = date, y = encounter_count, color = citizenship))+
+  geom_xspline()+
+  labs(subtitle = "Monthly Encounters <br> *(Thousands)*",
+       y = NULL,
+       x = NULL,
+       title = "Migrant Encounters at the U.S. Southwest Border",
+       fill = "**Nationality:**")+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), as.Date(date2)+550)
+                  )+
+  theme_usaid_blue(base_family = "Gill Sans", caption = cap$swb, rf = F, bl = F,base_size = 15)+
+  scale_y_continuous(labels = label_number(scale = 1/1000, big.mark = ","),
+                     #breaks = seq(1e4,5e4,length.out = 5),
+                     # sec.axis = sec_axis(labels = label_number(scale = 1/1000),trans = ~.,
+                     #                     breaks = seq(2e4,8e4,length.out = 4),
+                     #                     name = "")
+                     )+
+  scale_x_date(breaks = tm_db(month2,year0 = 2019, n = 1),
+               date_labels = "%b '%y")+
+  geom_rangeframe(color = "grey50", sides = "bl")+
+  # geom_flag(data = . %>% filter(date == date2),
+  #           aes(country = fips),
+  #           size = 3)+
+  geom_point(data = . %>% filter(date == date2))+
+  geom_text_repel(data = . %>% filter(date == date2),
+                  aes(label = citizenship),
+                  nudge_x = 300,
+                  #direction = "x",
+                  force = 20,
+                  family = "Gill Sans",
+                  segment.linetype = "dotted") +
+  #facet_wrap(~citizenship,nrow = 3,strip.position = "bottom")+
+  # theme(panel.background = element_rect(color = "grey80"),
+  #       panel.grid.major.y = element_line(colour = "grey90", linetype = "dotted"))+
+  guides(fill = guide_legend(direction = "horizontal"),
+         color = "none") +
+  theme()+
+  scale_color_cbp()
+ggs(filename = "mu_charts/us_ncachnv.jpg")
+```
+
+```{r CHNV}
+chnv_plot <- cbp_all |>
+  filter(citizenship %in% c("CUBA", "NICARAGUA", "VENEZUELA", "HAITI"),
+         land_border_region == "Southwest Land Border" | component == "Office of Field Operations") %>% 
+  #mutate(across(citizenship,str_to_title)) |> 
+  group_by(date,year, month_abbv,citizenship, component) |> 
+  summarise(across(encounter_count,sum)) %>% 
+
+  mutate(citizenship = fct_reorder(citizenship,encounter_count,sum)) |> 
+  ggplot(aes(x = date, y = encounter_count, color = component))+
+  geom_xspline()+
+  facet_wrap(~citizenship)+
+
+  labs(y = "Monthly Encounters <br> *(Thousands)*",
+       x = NULL,
+       color = "",
+       title = "Migrants Encountered | CHNV Nationalities | All U.S. Borders",
+       fill = "**Nationality:**")+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), as.Date(date2)+200)
+                  )+
+  theme_usaid_blue(base_family = "Gill Sans", caption = cap$swb, rf = F, bl = F,base_size = 18)+
+  scale_y_continuous(labels = label_number(scale = 1/1000),
+                     #breaks = seq(1e4,5e4,length.out = 5),
+                     # sec.axis = sec_axis(labels = label_number(scale = 1/1000),trans = ~.,
+                     #                     breaks = seq(2e4,8e4,length.out = 4),
+                     #                     name = "")
+                     )+
+  scale_x_date(breaks = tm_db(month2,year0 = 2019,n = 1),
+               date_labels = "%b %y")+
+  geom_rangeframe(color = "grey50", sides = "bl")+
+  # geom_flag(data = . %>% filter(date == date2),
+  #           aes(country = fips),
+  #           size = 3)+
+  geom_point(data = . %>% filter(date == date2))+
+  # geom_text_repel(data = . %>% filter(date == date2),
+  #                 aes(label = citizenship),
+  #                 nudge_x = 1500,
+  #                 size = 3,
+  #                 hjust = 1,
+  #                 #direction = "x",
+  #                 force = 20,
+  #                 family = "Gill Sans",
+  #                 segment.linetype = "dotted") +
+  #facet_wrap(~citizenship,nrow = 3,strip.position = "bottom")+
+  # theme(panel.background = element_rect(color = "grey80"),
+  #       panel.grid.major.y = element_line(colour = "grey90", linetype = "dotted"))+
+  guides(fill = guide_legend(direction = "horizontal"),
+         ) +
+  scale_color_metro(labels = c( "At Ports of Entry","Between Ports of Entry (Southwest Border)"))+
+  theme(legend.position = "top",
+        legend.text = element_markdown())
+  
+
+  ggs(
+    plot = chnv_plot, 
+    category = "encounters", 
+    charttype = "facet",
+    subset = "swb", 
+    demographics = "chnv", 
+    additionalinfo = NULL, 
+    folder = "mu_charts", 
+    width = 250, 
+    height = 150,
+  )
+```
+
+```{r NCA MEX*}
+swb |>
+  mutate(citizenship = case_when(citizenship %in% c("HONDURAS", "GUATEMALA", "EL SALVADOR")~"Northern \nCentral \nAmerica",
+                                 citizenship %in% "MEXICO" ~ "Mexico",
+                                 #citizenship %in% "VENEZUELA" ~ "Venezuela",
+                                 T ~ "All Others")) |> 
+  mutate(across(citizenship,str_to_title)) |> 
+  group_by(date,year, month_abbv,citizenship) |> 
+  summarise(across(encounter_count,sum)) |> 
+  left_join(cc_raw |> select(citizenship = official_name_en, fips = iso3166_1_alpha_2)) |> 
+  mutate(fips = fips |> tolower()) |> 
+  mutate(citizenship = fct_reorder(citizenship,encounter_count,sum)) |> 
+  ggplot(aes(x = date, y = encounter_count, color = citizenship))+
+  geom_xspline()+
+  #geom_line(position = "stack", color = 'grey70', size = .5)+
+  #geom_vline(xintercept = as.Date("2022-01-01"), color = "grey70", linetype = "dotted") +
+  labs(subtitle = "Monthly Encounters <br> *(Thousands)*",
+       x = NULL,
+       y = NULL,
+       title = "Migrant Encounters at the U.S. Southwest Border",
+       fill = "**Nationality:**")+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), as.Date(date2)+200)
+                  )+
+  theme_usaid_blue(base_family = "Gill Sans",base_size = 15, caption = cap$swb, rf = F, bl = F)+
+  scale_y_continuous(labels = label_number(scale = 1/1000),
+                     #breaks = seq(1e4,5e4,length.out = 5),
+                     # sec.axis = sec_axis(labels = label_number(scale = 1/1000),trans = ~.,
+                     #                     breaks = seq(2e4,8e4,length.out = 4),
+                     #                     name = "")
+                     )+
+  scale_x_date(breaks = tm_db("Aug",year0 = 2019, n = 1),
+               date_labels = "%b '%y")+
+  geom_rangeframe(color = "grey50", sides = "bl")+
+  # geom_flag(data = . %>% filter(date == date2),
+  #           aes(country = fips),
+  #           size = 3)+
+  geom_point(data = . %>% filter(date == date2))+
+  geom_text_repel(data = . %>% filter(date == date2),
+                  aes(label = citizenship),
+                  nudge_x = 1500,
+                  #direction = "x",
+                  force = 20,
+                  family = "Gill Sans",
+                  segment.linetype = "dotted") +
+  #facet_wrap(~citizenship,nrow = 3,strip.position = "bottom")+
+  # theme(panel.background = element_rect(color = "grey80"),
+  #       panel.grid.major.y = element_line(colour = "grey90", linetype = "dotted"))+
+  guides(fill = guide_legend(direction = "horizontal"),
+         color = "none") +
+  theme()+
+  scale_color_cbp()
+ggs(filename = "mu_charts/us_nca_mex.jpg")
+```
+
+```{r NCA ESCAM ask*}
+swb %>% 
+  select(date, citizenship, encounter_count) %>%
+  filter(citizenship %in% c("HONDURAS", "GUATEMALA","MEXICO", "COLOMBIA","VENEZUELA")) %>%
+  summarise(across(encounter_count, sum), .by = c(date, citizenship))  |>
+  left_join(pop23) %>% 
+  mutate(percap_count = (encounter_count/pop)*1e3) %>%
+  ggplot(aes(x = date, y = percap_count, 
+             color = citizenship
+             ))+
+  geom_xspline()+
+  labs(subtitle = "Monthly Encounters <br> *(Per 1000 Population)*",
+       x = NULL,
+       title = "Per Capita Migrant Encounters at the U.S. Southwest Border",
+       y = NULL,
+       fill = "**Nationality:**")+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), 
+                           as.Date(date2)+450)
+                  )+
+  theme_usaid_blue(base_family = "Gill Sans", caption = cap$swb, rf = F, base_size = 15)+
+  scale_y_continuous(
+    #labels = label_number(scale = 1/1000),
+                     #breaks = seq(1e4,5e4,length.out = 5),
+                     # sec.axis = sec_axis(labels = label_number(scale = 1/1000),trans = ~.,
+                     #                     breaks = seq(2e4,8e4,length.out = 4),
+                     #                     name = "")
+                     )+
+  scale_x_date(breaks = tm_db(month2, n = 1, year0 = 2019),
+               date_labels = "%b '%y")+
+  geom_rangeframe(color = "grey50", sides = "bl")+
+  # geom_flag(data = . %>% filter(date == date2),
+  #           aes(country = fips),
+  #           size = 3)+
+  theme(panel.grid.major.y = element_blank())+
+  geom_point(data = . %>% filter(date == date2))+
+  geom_text_repel(data = . %>% filter(date == date2),
+                  aes(label = citizenship),
+                  nudge_x = 70,
+                  #direction = "x",
+                  force = 3,
+                  size = 4,
+                  fontface = "bold",
+                  family = "Gill Sans",
+                  segment.linetype = "dotted") +
+  #facet_wrap(~citizenship,nrow = 3,strip.position = "bottom")+
+  # theme(panel.background = element_rect(color = "grey80"),
+  #       panel.grid.major.y = element_line(colour = "grey90", linetype = "dotted"))+
+  guides(fill = guide_legend(direction = "horizontal"),
+         color = "none")+
+  theme()+
+  scale_color_metro()
+ggs(width = 280)
+```
+
+```{r NCAM+Other*}
+swb %>% 
+   mutate(citizenship = ifelse(citizenship %in% c("MEXICO", "EL SALVADOR", "GUATEMALA", "HONDURAS"),
+                               citizenship,
+                               "All Others")) %>% 
+  mutate(across(citizenship,str_to_title)) |> 
+  group_by(date,year, month_abbv,citizenship) |> 
+  summarise(across(encounter_count,sum)) |>
+  left_join(cc_raw |> select(citizenship = official_name_en, fips = iso3166_1_alpha_2)) |> 
+  mutate(fips = fips |> tolower()) |> 
+  mutate(citizenship = fct_reorder(citizenship,encounter_count,sum)) |> 
+  ggplot(aes(x = date, y = encounter_count, color = citizenship))+
+  geom_xspline()+
+  #geom_line(position = "stack", color = 'grey70', size = .5)+
+  #geom_vline(xintercept = as.Date("2022-01-01"), color = "grey70", linetype = "dotted") +
+  labs(subtitle = "Monthly Encounters <br> *(Thousands)*",
+       x = NULL,
+       y = NULL,
+       title = "Migrant Encounters at the U.S. Southwest Border",
+       #subtitle = "Top 5 Countries outside of Mexico and northern Central America",
+       fill = "**Nationality:**")+
+  coord_cartesian(expand = F, clip = "off",
+                  xlim = c(as.Date("2019-10-01"), as.Date(date2)+300)
+                  )+
+  theme_usaid_blue(base_family = "Gill Sans",base_size = 15,caption = cap$swb, rf = F, bl = F)+
+  scale_y_continuous(labels = label_number(scale = 1/1000),
+                     #breaks = seq(1e4,5e4,length.out = 5),
+                     # sec.axis = sec_axis(labels = label_number(scale = 1/1000),trans = ~.,
+                     #                     breaks = seq(2e4,8e4,length.out = 4),
+                     #                     name = "")
+                     )+
+  scale_x_date(breaks = tm_db(month2,year0 = 2019, n = 1)[tm_db(month2,year0 = 2019)<=as.Date(date2)],
+               date_labels = "%b %y")+
+  geom_rangeframe(color = "grey50", sides = "bl")+
+  # geom_flag(data = . %>% filter(date == date2),
+  #           aes(country = fips),
+  #           size = 3)+
+  geom_point(data = . %>% filter(date == date2))+
+  geom_text_repel(data = . %>% filter(date == date2),
+                  aes(label = citizenship),
+                  nudge_x = 300,
+                  size = 4,fontface = "bold",
+                  #direction = "x",
+                  force = 20,
+                  family = "Gill Sans",
+                  segment.linetype = "dotted") +
+  #facet_wrap(~citizenship,nrow = 3,strip.position = "bottom")+
+  # theme(panel.background = element_rect(color = "grey80"),
+  #       panel.grid.major.y = element_line(colour = "grey90", linetype = "dotted"))+
+  guides(fill = guide_legend(direction = "horizontal"),
+         color = "none")+
+  theme()+
+  scale_color_cbp()
+ggs(width = 280)
+```
+
+### Family Units
+
+```{r fu_share_tot}
+cbp_all %>%
+  filter(land_border_region == "Southwest Land Border") %>% 
+  mutate(citizenship = case_when(citizenship %in% "MEXICO" ~ citizenship,
+                                 citizenship %in% nca ~ "Northern \nCentral \nAmerica",
+                                 #citizenship %in% chnv ~ "CHNV",
+                                 T ~ "OTHER") %>% 
+           str_to_title()) %>% 
+  summarise(across(encounter_count,sum),.by = c(date,
+                                                #citizenship,
+                                                demographic)) %>% 
+  mutate(freq = encounter_count/sum(encounter_count),.by = c(date,
+                                                             #citizenship
+                                                             )) %>% 
+  filter(demographic == "FMUA") %>% 
+  arrange(date) %>%
+  ggplot(aes(x = date, y = freq, 
+             #color = citizenship
+             ))+
+  geom_xspline(show.legend = F)+
+  # facet_wrap(~component,
+  #            labeller = labeller(component = c(`Office of Field Operations` = "**Ports of Entry**", 
+  #                                              `U.S. Border Patrol` = "**Between Ports of Entry**")))+
+  theme_usaid_blue(bl = F,base_size = 15,caption = cap$swb)+
+  # geom_text_repel(data = . %>% filter(date == date2),
+  #                  aes(label = citizenship),
+  #                  family = "Gill Sans",
+  #                 nudge_x = 60,
+  #                 size = 4,
+  #                 fontface = "bold",
+  #                 segment.linetype = "dotted",
+  #                 show.legend = F)+
+  coord_cartesian(xlim = as.Date(c("2019-10-01", "2024-08-01")))+
+  scale_y_continuous(labels = label_percent())+
+  scale_x_date(breaks = tm_db(month2, n = 1),
+               date_labels = "%b '%y")+
+  labs(subtitle = "Family Unit Encounters as Share of Total",
+       y = NULL,
+       x = NULL,
+       title = "Migrants Encountered as Family Units at *All* U.S. Borders"
+       )+
+  scale_color_cbp()+
+  geom_point(data = . %>% filter(date == date2),
+             show.legend = F)+
+  geom_vline(xintercept = as.Date("2023-05-01"),
+             color = "grey20",
+             linetype = "dotted")+
+  geom_label(aes(x = as.Date("2023-05-01"), y = .68, label = "Title 42 \n Expires"),
+              family = "Gill Sans", 
+             color = "black", fill = "white")
+
+ggs(filename = "mu_charts/us_fam.jpg")
+```
+
+## Tables
+
+```{r table prep v2}
+fy <- 2024
+fytd_nums <- swb %>% filter(fiscal_year >= fy) %>% distinct(date = month(date)) %>% pull(date)
+sltj_totals <- swb |>
+  #mutate(fiscal_year = year) %>% #CHANGE TO CAL YEAR
+  filter(
+         fiscal_year >= 2021,
+         land_border_region == "Southwest Land Border",
+  ) |>
+summarise(across(encounter_count,sum), .by = c(date, fiscal_year)) %>% 
+  mutate(encounter = sum(encounter_count[fiscal_year==fy], na.rm = T),
+         mencounter = mean(encounter_count[fiscal_year==fy], na.rm = T),
+         encounter_ly_ftd = sum(encounter_count[fiscal_year == fy-1 & month(date) %in% fytd_nums])) %>% 
+  summarise(across(encounter_count,sum),.by = c(date,encounter, mencounter,encounter_ly_ftd)) %>% 
+  mutate(lastm = ifelse(is.null(encounter_count[date == date2]),
+                        NA,
+                        encounter_count[date == date2]),
+         last2m = ifelse(is.null(encounter_count[date == date1]),
+                         NA,
+                         encounter_count[date == date1]),
+         # last1y = ifelse(is.null(encounter_count[month(date) == month(date1) & 
+         #                                           year(date) == year(date1)-1]),
+         #                 NA,
+         #                 encounter_count[month(date) == month(date1) & 
+         #                                           year(date) == year(date1)-1])
+         ) %>% 
+  arrange(date) |>
+  group_by(lastm,last2m,encounter, mencounter,encounter_ly_ftd) |>
+  summarise(
+            spark = list(encounter_count),.groups = "drop",
+            #trend = sparkline(encounter_count, type = "line")
+  ) %>% 
+    mutate(eb = NA) %>%
+  arrange(-encounter) |>
+  slice_max(encounter, n = 12) |>
+  mutate(citizenship = "Total",
+         #change = lastm-last2m,
+         pct_change_m = (lastm -last2m)/last2m,
+         pct_change_y = (encounter - encounter_ly_ftd)/encounter_ly_ftd) |>
+  select(-c(last2m))
+
+sltj <- swb |>
+  #mutate(fiscal_year = year) %>% 
+  filter(
+         fiscal_year >= 2021,
+         land_border_region == "Southwest Land Border",
+         #citizenship != "OTHER",
+  ) |>
+  summarise(across(encounter_count,sum), .by = c(date,citizenship, fiscal_year)) %>% 
+  mutate(encounter = sum(encounter_count[fiscal_year==fy]),
+         mencounter = mean(encounter_count[fiscal_year==fy]),
+         encounter_ly_ftd = sum(encounter_count[fiscal_year == fy-1 & month(date) %in% fytd_nums]),
+         .by = citizenship) %>% 
+  group_by(citizenship,date,encounter, mencounter,encounter_ly_ftd) %>% 
+  summarise(across(encounter_count,sum)) %>% 
+  group_by(citizenship) %>% 
+  mutate(lastm = ifelse(is.null(encounter_count[date == date2]),
+                        NA,
+                        encounter_count[date == date2]),
+         last2m = ifelse(is.null(encounter_count[date == date1]),
+                         NA,
+                         encounter_count[date == date1]),
+         # last1y = ifelse(is.null(encounter_count[month(date) == month(date1) & 
+         #                                           year(date) == year(date1)-1]),
+         #                 NA,
+         #                 encounter_count[month(date) == month(date1) & 
+         #                                           year(date) == year(date1)-1])
+         ) |>
+  arrange(date) |>
+  ungroup() %>% 
+  summarise(
+            spark = list(encounter_count),
+            .by = c(citizenship,lastm,last2m,encounter,encounter_ly_ftd, mencounter)
+            #trend = sparkline(encounter_count, type = "line")
+  ) %>% 
+  mutate(eb = encounter) %>%
+  arrange(-encounter) |>
+  slice_max(encounter, n = 12) |>
+  mutate(citizenship = str_to_title(citizenship),
+         #change = lastm-last2m,
+         pct_change_m = (lastm -last2m)/last2m,
+         pct_change_y = (encounter - encounter_ly_ftd)/encounter_ly_ftd) |>
+  select(-c(last2m)) %>% 
+  bind_rows(sltj_totals) %>% 
+  mutate(fact = round(lastm/mencounter,1)) %>% 
+  arrange(-encounter)
+
+```
+
+```{r table prep darien v2}
+
+fy <- 2024
+fytd_nums <- dar %>%
+  
+  mutate(fiscal_year = fiscal_year(date)) %>% 
+  filter(fiscal_year >= fy) %>% 
+  distinct(date = month(date)) %>% pull(date)
+dar_tot <- dar |>
+  rename(encounter_count = encounter_count) %>% 
+  mutate(year = year(date),
+         month = month(date, label = T),
+         fiscal_year = ifelse(month %in% c("Oct", "Nov", "Dec"), year+1,year)) |> 
+  #mutate(fiscal_year = year) %>% # CHANGE TO CAL YEAR
+  filter(fiscal_year >= 2021) |> 
+  summarise(across(encounter_count,sum),
+            .by = c(date, fiscal_year)) %>% 
+   mutate(lastm = ifelse(is.null(encounter_count[date == date2]),NA,encounter_count[date == date2]),
+          last2m = ifelse(is.null(encounter_count[date == date1]),NA,encounter_count[date == date1]),
+         change = lastm - last2m,
+         pct_change =(lastm - last2m)/last2m) %>%
+  arrange(date) %>% 
+  summarise(spark = list(encounter_count),
+            encounter = sum(encounter_count[fiscal_year== fy]),
+            mencounter = mean(encounter_count[fiscal_year ==fy]),
+            encounter_ly_ftd = sum(encounter_count[fiscal_year == fy-1 & month(date) %in% fytd_nums]),
+            #change = mean(change),
+            pct_change_m = mean(pct_change),
+            lastm = mean(lastm),
+            eb = NA,
+            citizenship = "Total") %>% 
+  mutate(pct_change_y = (encounter-encounter_ly_ftd)/encounter_ly_ftd)
+
+sltj_dar <- dar |>
+  rename(encounter_count = encounter_count) %>% 
+  mutate(citizenship = str_to_title(citizenship),
+         year = year(date),
+         month = month(date, label = T),
+         fiscal_year = ifelse(month %in% c("Oct", "Nov", "Dec"), year+1,year)) |> 
+  #mutate(fiscal_year = year) %>% #change to cal year!!
+  filter(fiscal_year >= 2021,
+         !citizenship %in% c("Otros Paises", "Afghanistan")) |> 
+  
+  mutate(lastm = ifelse(is.null(encounter_count[month == month2]),NA,encounter_count[month == month2]),
+         last2m = ifelse(is.null(encounter_count[month == dt$month1]),NA,encounter_count[month == dt$month1]),
+         .by = citizenship)|>
+  drop_na(lastm,last2m) |>
+  select(-c(month,year,country_of_entry)) |> 
+  pivot_longer(-c(citizenship,date,fiscal_year,lastm,last2m)) |> 
+  arrange(citizenship) |> 
+  mutate(
+    #change = lastm - last2m,
+         pct_change_m =(lastm - last2m)/last2m) |> 
+  arrange(date) |> 
+  summarise(encounter = sum(value[fiscal_year == fy]),
+            mencounter = mean(value[fiscal_year == fy]),
+            encounter_ly_ftd = sum(value[fiscal_year == fy-1 & month(date) %in% fytd_nums]),
+            spark = list(value),
+            eb = encounter,
+            .by = c(citizenship,
+                    #change,
+                    pct_change_m,lastm)) |> 
+  mutate(pct_change_y = (encounter-encounter_ly_ftd)/encounter_ly_ftd) %>% 
+  slice_max(encounter,n = 10) |>
+  mutate(encounter = as.integer(encounter),
+         citizenship = str_remove_all(citizenship,fixed("(1)")) |> str_trim(),
+         citizenship = case_when(citizenship == "Brasil" ~ "Brazil",
+                                 citizenship == "Camerun" ~ "Cameroon",
+                                 citizenship == "Afganistan" ~ "Afghanistan",
+                                 citizenship == "Rep. Dominicana" ~ "Dominican Republic",
+                                 T ~ citizenship)) %>% 
+  bind_rows(dar_tot) %>% 
+  mutate(fact = round(lastm/mencounter,1)) %>% 
+  arrange(-encounter)
+
+```
+
+```{r table prep mex v2}
+
+mex_tot <- mex %>% 
+  rename(encounter_count = encounter_count) %>% 
+  mutate(year = year(date),
+           month = month(date, abbr = T,label = T),
+         fiscal_year = ifelse(month %in% c("Oct", "Nov", "Dec"), year+1,year),
+         month = str_to_title(month)) |>
+  
+  #mutate(fiscal_year = year) %>% 
+  filter(fiscal_year >= 2021) %>% 
+  group_by(date,fiscal_year) %>%  
+  summarise(across(encounter_count,sum)) %>% 
+  ungroup() %>% 
+  mutate(lastm = ifelse(is.null(encounter_count[date == dt$date2]),NA,encounter_count[date == dt$date2]),
+         last2m = ifelse(is.null(encounter_count[date == dt$date1]),NA,encounter_count[date == dt$date1])) %>%
+  summarise(spark = list(encounter_count),
+            encounter = sum(encounter_count[fiscal_year== fy]),
+            mencounter = mean(encounter_count[fiscal_year== fy]),
+            encounter_ly_ftd = sum(encounter_count[fiscal_year == fy-1 & month(date) %in% fytd_nums]),
+            #change = mean(change),
+            #pct_change = mean(pct_change),
+            lastm = mean(lastm),
+            last2m = mean(last2m),
+            eb = NA,
+            citizenship = "Total") %>% 
+  mutate(change = lastm - last2m,
+         pct_change_m = change/last2m,
+         pct_change_y = (encounter-encounter_ly_ftd)/encounter_ly_ftd)
+  
+
+sltj_mex <- mex |> 
+  rename(encounter_count = encounter_count) %>% 
+  select(-country_of_entry) %>% 
+  mutate(year = year(date),
+         month = month(date, abbr = T, label = T),
+         fiscal_year = ifelse(month %in% c("Oct", "Nov", "Dec"), year+1,year),
+         month = str_to_title(month)) |>
+  group_by(citizenship) |>
+  #mutate(fiscal_year = year) %>% 
+  filter(fiscal_year > 2020,
+         !citizenship %in% c("Otros Paises", "Afganistan", "Albania")) %>%
+  mutate(lastm = ifelse(is.null(encounter_count[date == dt$date2]),NA,encounter_count[date == dt$date2]),
+         last2m = ifelse(is.null(encounter_count[date == dt$date1]),NA,encounter_count[date == dt$date1])) %>% 
+  drop_na(lastm,last2m) |>
+  select(-c(month,year)) %>% 
+  pivot_longer(-c(citizenship,date,fiscal_year,lastm,last2m)) |> 
+  arrange(citizenship) |> 
+  group_by(citizenship,lastm,last2m) |>
+  arrange(date) |>
+  summarise(encounter = sum(value[fiscal_year == fy]),
+            encounter_ly_ftd = sum(value[fiscal_year == fy-1 & month(date) %in% fytd_nums]),
+            mencounter = mean(value[fiscal_year == fy]),
+            spark = list(value),
+            eb = encounter) |> 
+    mutate(change = lastm - last2m,
+           pct_change_m = change/last2m,
+         pct_change_y = (encounter-encounter_ly_ftd)/encounter_ly_ftd) |> 
+  ungroup() |> 
+  slice_max(encounter,n = 12) |>
+  mutate(encounter = as.integer(encounter),
+         citizenship = str_remove_all(citizenship,fixed("(1)")) |> str_trim(),
+         citizenship = str_to_title(citizenship),
+         citizenship = case_when(citizenship == "Brasil" ~ "Brazil",
+                                 citizenship == "Camerun" ~ "Cameroon",
+                                 citizenship == "Afganistan" ~ "Afghanistan",
+                                 citizenship == "Republica Dominicana" ~ "Dominican Republic",
+                                 T ~ citizenship)) %>% 
+  bind_rows(mex_tot) %>% 
+  mutate(fact = round(lastm/mencounter,1)) %>% 
+  arrange(-encounter)
+
+```
+
+```{r table prep honduras v2}
+
+fy <- 2024
+hnd_tot <- hnd |>
+  mutate(year = year(date),
+         month = month(date, label = T),
+         fiscal_year = ifelse(month %in% c("Oct", "Nov", "Dec"), year+1,year)) |> 
+  #mutate(fiscal_year = year) %>% # CHANGE TO CAL YEAR
+  filter(fiscal_year >= 2021) |> 
+  rename(encounter_count = encounter_count) %>% 
+  summarise(across(encounter_count,sum),
+            .by = c(date, fiscal_year)) %>% 
+   mutate(lastm = ifelse(is.null(encounter_count[date == date2]),NA,encounter_count[date == date2]),
+          last2m = ifelse(is.null(encounter_count[date == date1]),NA,encounter_count[date == date1]),
+         change = lastm - last2m,
+         pct_change =(lastm - last2m)/last2m) %>%
+  arrange(date) %>% 
+  summarise(spark = list(encounter_count),
+            encounter = sum(encounter_count[fiscal_year== fy]),
+            mencounter = mean(encounter_count[fiscal_year ==fy]),
+            encounter_ly_ftd = sum(encounter_count[fiscal_year == fy-1 & month(date) %in% fytd_nums]),
+            #change = mean(change),
+            pct_change_m = mean(pct_change),
+            lastm = mean(lastm),
+            eb = NA,
+            citizenship = "Total") %>% 
+  mutate(pct_change_y = (encounter-encounter_ly_ftd)/encounter_ly_ftd)
+dar_tot
+sltj_hnd <- hnd|>
+  rename(encounter_count = encounter_count,
+         citizenship = nationality) %>% 
+  mutate(citizenship = str_to_title(citizenship),
+         year = year(date),
+         month = month(date, label = T),
+         fiscal_year = ifelse(month %in% c("Oct", "Nov", "Dec"), year+1,year)) |> 
+  #mutate(fiscal_year = year) %>% #change to cal year!!
+  filter(fiscal_year >= 2021,
+         !citizenship %in% c("Otros Paises", "Afghanistan")) |> 
+  
+  mutate(lastm = ifelse(is.null(encounter_count[month == month2]),NA,encounter_count[month == month2]),
+         last2m = ifelse(is.null(encounter_count[month == dt$month1]),NA,encounter_count[month == dt$month1]),
+         .by = citizenship)|>
+  drop_na(lastm,last2m) |>
+  select(-c(month,year)) |>
+  pivot_longer(-c(citizenship,date,fiscal_year,lastm,last2m)) |> 
+  arrange(citizenship) |> 
+  mutate(
+    #change = lastm - last2m,
+         pct_change_m =(lastm - last2m)/last2m) |> 
+  arrange(date) |> 
+  summarise(encounter = sum(value[fiscal_year == fy]),
+            mencounter = mean(value[fiscal_year == fy]),
+            encounter_ly_ftd = sum(value[fiscal_year == fy-1 & month(date) %in% fytd_nums]),
+            spark = list(value),
+            eb = encounter,
+            .by = c(citizenship,
+                    #change,
+                    pct_change_m,lastm)) |> 
+  mutate(pct_change_y = (encounter-encounter_ly_ftd)/encounter_ly_ftd) %>% 
+  slice_max(encounter,n = 10) |>
+  mutate(encounter = as.integer(encounter),
+         citizenship = str_remove_all(citizenship,fixed("(1)")) |> str_trim(),
+         citizenship = case_when(citizenship == "Brasil" ~ "Brazil",
+                                 citizenship == "Camerun" ~ "Cameroon",
+                                 citizenship == "Afganistan" ~ "Afghanistan",
+                                 citizenship == "Rep. Dominicana" ~ "Dominican Republic",
+                                 T ~ citizenship)) %>% 
+  bind_rows(hnd_tot) %>% 
+  mutate(fact = round(lastm/mencounter,1)) %>% 
+  arrange(-encounter)
+
+```
+
+```{r table print v2, eval=FALSE}
+#| eval: false
+mig_tables <- pmap(list(list(sltj
+                             ,sltj_dar
+                             ,sltj_mex
+                             #,sltj_hnd
+                             ),
+          c("U.S. Southwest Border"
+            ,"Darien Gap"
+            ,"Mexican Authorities"
+            #,"Honduras"
+            ),
+          c(main_color_1
+             ,main_color_2
+             ,"darkgreen"
+             #,"darkorange"
+            ),
+          #caption
+          c(cap$swb
+             ,cap$dar
+             ,"Data from GOM, data recorded as migrant events"
+            # ,"Data from GOH"
+            ),
+          c(rep(month2,2),
+             month2
+            #,month2
+            ),
+          c(rep(dt$month1,2),
+             dt$month1
+            #,month1
+            )
+          ),
+     
+  ~mutate(..1,citizenship = ifelse(str_detect(citizenship,"China") ,"China",citizenship)) %>%
+    left_join(sup$cflag) |>
+    select(img,citizenship,encounter,lastm,mencounter,spark,
+           
+           pct_change_y,pct_change_m,fact,
+           ) %>% 
+  mutate(across(citizenship,~fct_reorder(.,encounter) %>% fct_relevel("Other",after = 0))) %>% 
+  arrange(desc(citizenship)) %>% 
+  gt() %>% 
+  data_color(pct_change_m,
+   colors = scales::col_bin(bins = c(-Inf,0,Inf),
+    palette = c("#c7e9ff", "white","#ffdfd9"),
+    #domain = range(change)
+    )) |>
+    data_color(pct_change_y,
+   colors = scales::col_bin(bins = c(-Inf,0,Inf),
+    palette = c("#c7e9ff", "white","#ffdfd9"),
+    #domain = range(change)
+    )) %>% 
+    cols_hide(c(fact,pct_change_m)) %>% 
+  gt_plt_sparkline(spark, label = T,same_limit = F,
+                   palette = c("black", rep("transparent", 4))) %>% 
+  #cols_move(c(spark,lastm),citizenship))
+  cols_move_to_start(img) %>% 
+  tab_spanner(
+    columns = c(pct_change_y), 
+    label = md(paste0("**Pct. Change","**"))) %>% 
+  tab_spanner(columns = c(encounter,lastm,mencounter), label = md("**Encounters**")) |> 
+  tab_spanner(columns = c(spark), label = md("**Trend**")) |> 
+  fmt_integer(columns = c(encounter,
+                          #change,
+                          lastm, 
+                          mencounter)) %>% 
+  fmt_percent(
+    c(pct_change_y,pct_change_m),
+    decimals = 0) %>% 
+  cols_label(citizenship = md("**Nationality**"),
+             encounter = md("**FY24**"),
+             img = "",
+             mencounter = md("**Mon Avg.**"),
+             lastm = md(paste0("**",..5,"**")),
+             spark = md("**FY21-FY24**"),
+             #change = md("**Total**"),
+             pct_change_y = md(paste0("**","FY24/FY23<sup>1</sup>","**")),
+             
+             pct_change_m = md(paste0(""))
+             ) %>% 
+  tab_header(subtitle = md("**Top Nationalities for Migrant Encounters**"),
+             title = md(paste0("**",..2," | ",..5," ",dt$year2, "**"))
+  ) %>% 
+  tab_footnote(footnote = paste(..4 |>
+                 str_replace_all("USAID", "<span style = 'color:#002F6C'>US<span style = color:#BA2D42>AID</span></span>"),
+                 "<br><sup>1</sup>percent change of the current fiscal year-to-date compared to the same months during the previous fiscal year") %>% md()) |>
+  opt_table_font("Gill Sans") |> 
+  tab_options(heading.background.color = ..3,
+              heading.title.font.size = 20,
+              heading.subtitle.font.size = 18) |> 
+    cols_width(c(pct_change_y)~px(130)) %>% 
+  cols_width(c(pct_change_m)~px(80)) |> 
+  tab_style(cell_text(align = "center"),
+            cells_body(columns = pct_change_y)) %>% 
+  tab_style(cell_text(size = "small"),
+            cells_column_labels(columns = pct_change_y)) %>% 
+    cols_align_decimal(pct_change_y) %>% 
+  gt::text_transform(
+    locations = cells_body(c(img)),
+    fn = function(x) {
+      #Return an image of set dimensions
+      web_image(
+        url = x,
+        height = 12
+      )
+    }
+  )
+)
+
+#
+#save tables if needed
+mig_tables[1:3] |>
+  walk2(c(here("Migration Update", "mu_charts", "table_swb.png"),
+          here("Migration Update", "mu_charts", "table_dar.png"),
+          here("Migration Update", "mu_charts", "table_mex.png")),
+          # ,"mu_charts/table_hnd.png"
+          
+        ~gtsave(..1,..2,))
+
+
+```
+
+## Darien Graphs
+
+```{r Darien_TS}
+
+
+dar_tsum <- dar |> 
+  filter(citizenship == "VENEZUELA") %>% 
+  mutate(year = year(date),
+         month = month(date,label = T),
+         fyear = ifelse(month %in% c("Oct", "Nov", "Dec"),year+1,year),
+         across(month,fct_relevel,c(month.abb[10:12],month.abb[1:9]))) |> 
+  
+  group_by(fyear,month,date) |> 
+  arrange(date) |> 
+  summarise(across(encounter_count,sum)) |> 
+  ungroup() |> 
+  filter(fyear > 2020) %>% 
+  mutate(across(c(fyear),as.factor))
+
+ts_dar_plot <- dar_tsum|>
+  filter(date <= date2) %>% 
+  ggplot(aes(x = date, y = encounter_count))+
+  # stat_xspline(color = main_color_2,spline_shape = .1, 
+  #              geom =  "area", fill = grad_ungroup)+
+  geom_xspline(color = main_color_2,spline_shape = .3,
+               linewidth = 2)+
+   geom_ribbon(
+  aes(ymin = 0, ymax = encounter_count),
+  fill = "pink",   # Specific color choice
+  alpha = 0.2,
+  inherit.aes = TRUE
+)+
+  geom_point(data = . %>% filter(date == date2),
+             color = main_color_2, size = 1)+
+  labs(x = NULL,
+       y = NULL,
+       subtitle = "Monthly Encounters <br> *(Thousands)*",
+       title = "Venezuelan Migrants Encountered in the Darien Region")+
+  theme_usaid_blue(caption = "Data from Government of Panama | chart created by USAID/LAC",
+                   main_color_1 = main_color_2,
+                   rf = F, bl = F,
+                   base_size = 19)+
+  #theme(panel.grid.major.y = element_blank())+
+  scale_y_continuous(breaks = c(min(dar_tsum$encounter_count),
+                                dar_tsum$encounter_count[which(dar_tsum$date == date2)],
+                                max(dar_tsum$encounter_count)),
+                     sec.axis = dup_axis(name = ""),
+                     
+                     labels = ~floor(./1e3),
+                     limits = c(0,9e4))+
+  guides(x = guide_axis(minor.ticks = T))+
+  scale_x_date(breaks = tm_db(month2, n = 1), date_labels = "%b '%y",
+               minor_breaks = "month")+
+  geom_segment(aes(x = date2,
+                   xend = date2+30,
+                   y = encounter_count[which(date == date2)],
+                   yend = encounter_count[which(date == date2)]),
+               inherit.aes = F,
+               linetype = "dotted",
+               color = "grey",
+               data = . %>% filter(date == date2),)+
+  geom_rangeframe(sides = "br", color = "black")+
+  scale_color_metro()+
+  guides(color = "none")+
+  coord_cartesian(expand = F,
+                  clip = "off",
+                  xlim = c(min(dar_tsum$date)-70,max(dar_tsum$date)+30),
+                  ylim = range(dar_tsum$encounter_count)*1.01)+
+  theme(axis.text.y.left = element_blank(),
+        axis.ticks.y.left = element_blank())+
+  geom_rug(sides = "r", length = unit(0.01, "npc"))
+
+ggs(
+  plot = ts_dar_plot, 
+  category = "encounters", 
+  charttype = "ts",
+  subset = "dar", 
+  demographics = NULL, 
+  additionalinfo = NULL, 
+  folder = "ven_charts", 
+  width = 250, 
+  height = 150,
+)
+
+```
+
+```{r Darien_TS2}
+
+
+dar_tsum <- dar |> 
+  mutate(year = year(date),
+         month = month(date,label = T),
+         month_num = month(date),
+         across(month_num, ~ifelse(.>=10,.-12,.)),
+         fyear = fiscal_year(date),
+         across(c(month),fct_relevel,c(month.abb[10:12],month.abb[1:9])),
+         #across(month_num,~fct_reorder(.,month))
+         ) |> 
+  arrange(date) |> 
+  summarise(across(encounter_count,sum),.by = c(fyear,date,month,month_num)) |> 
+  filter(fyear > 2020) %>% 
+  mutate(across(c(fyear),as.factor)) %>% 
+  arrange(month_num)
+
+dar_tsum|>
+  ggplot(aes(x = month_num, y = encounter_count, color = factor(fyear)))+
+  # stat_xspline(color = main_color_2,spline_shape = .1, 
+  #              geom =  "area", fill = grad_ungroup)+
+  geom_xspline(
+    #color = main_color_2,
+               spline_shape = .3,
+               linewidth = 2)+
+  geom_point(data = . %>% filter(month_num == max(month_num),.by = fyear),
+             #color = main_color_2, 
+             size = 1)+
+  labs(x = NULL,
+       y = NULL,
+       subtitle = "Monthly Encounters <br> *(Thousands)*",
+       title = "Migrants Encountered in the Darien Gap")+
+  theme_usaid_blue(caption = "Data from Government of Panama | chart created by USAID/LAC <br> Right-axis rug shows encounters since FY23",
+                   main_color_1 = main_color_2,
+                   rf = F, bl = F,
+                   base_size = 15)+
+  #theme(panel.grid.major.y = element_blank())+
+  scale_y_continuous(breaks = c(min(dar_tsum$encounter_count),
+                                dar_tsum$encounter_count[which(dar_tsum$date == date2)],
+                                max(dar_tsum$encounter_count)),
+                     sec.axis = dup_axis(name = ""),
+                     
+                     labels = ~floor(./1e3),
+                     limits = c(0,9e4))+
+  #guides(x = guide_axis(minor.ticks = T))+
+  # scale_x_date(breaks = tm_db(month2, n = 1), date_labels = "%b '%y",
+  #              minor_breaks = "month")
+  scale_x_continuous(breaks = -2:9,
+                     labels = c(month.abb[10:12], month.abb[1:9]))+
+  # geom_segment(aes(x = date2,
+  #                  xend = date2+30,
+  #                  y = encounter_count[which(date == date2)],
+  #                  yend = encounter_count[which(date == date2)]),
+  #              inherit.aes = F,
+  #              linetype = "dotted",
+  #              color = "grey",
+  #              data = . %>% filter(date == date2),)+
+  geom_rangeframe(sides = "br", color = "black")+
+  scale_color_metro()+
+  guides(color = "none")+
+  coord_cartesian(expand = F,
+                  clip = "off",
+                  xlim = c(-2,9.5),
+                  ylim = range(dar_tsum$encounter_count)*1.01)+
+  theme(axis.text.y.left = element_blank(),
+        axis.ticks.y.left = element_blank())+
+  geom_rug(sides = "r", length = unit(0.01, "npc"),
+           data = .%>% filter(fiscal_year(date)>= 2023))
+ggs(filename="mu_charts/ts_dar.jpg")
+```
+
+```{r Darien_Tree_Month}
+tree_dar_plot<- dar |>
+  mutate(year = year(date),
+         month = month(date),
+         fiscal_year = ifelse(month>=10,year+1,year)) %>% 
+  filter(
+    #date == date2
+    fiscal_year == 2024
+    ) |> 
+  # mutate(citizenship = ifelse(citizenship %in% non_lac, "OTHER", citizenship),
+  #        ) |> 
+  summarise(across(encounter_count,sum),.by = citizenship) %>% 
+  mutate(citizenship = ifelse(encounter_count/sum(encounter_count) > .03, citizenship, "Other")) |> 
+  summarise(across(encounter_count,sum),.by = citizenship) |> 
+  mutate(share = encounter_count/sum(encounter_count)*100,
+         other = ifelse(citizenship == "Other", NA, citizenship)) |> 
+  ggplot(aes(area = share,
+             fill = other,
+             label = ifelse(share > 0,
+                            paste0(str_to_title(citizenship),
+                                   "\n ",
+                                   round(share, 0),
+                                   "%"),
+                           paste0(str_to_title(citizenship),
+                                  " ",
+                                  round(share, 0),
+                                  "%"))))+
+  geom_treemap(size = 3, color = "white",start = "topleft")+
+  geom_treemap_text(place = "center",grow = F,size = 18,start = "topleft", family = "Gill Sans",color= "white", fontface = "bold")+
+  guides(fill = "none")+
+  labs(title = paste("Migrants Encountered in the Darien Gap | FY 2024"
+                     #month2_long,year2
+                     ))+
+  scale_fill_cbp(na.value = "grey70")+
+  theme_usaid_blue(base_family = "Gill Sans",
+                   base_size = 20,
+                   main_color_1 = main_color_2,
+       caption = cap$dar)
+ggs(
+  plot = tree_dar_plot, 
+  category = "encounters", 
+  charttype = "tree",
+  subset = "dar", 
+  demographics = NULL, 
+  additionalinfo = NULL, 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+
+```
+
+```{r Darien_Tree_FY}
+#| eval: false
+# find non-other countries by share cutoff
+dar_cit <- dar %>% 
+  mutate(sumenc = sum(encounter_count)) %>%
+  summarise(sumcit = sum(encounter_count),.by = c(citizenship,sumenc)) %>% 
+  mutate(freq = round(sumcit/sumenc,2)) %>% 
+  #cutoff
+  filter(freq > .01) %>% 
+  pull(citizenship)
+
+dar %>%
+
+  #make anything less than .01% of encounter_count as "other
+  mutate(citizenship = ifelse(citizenship %in% dar_cit,
+                              citizenship,
+                              "Other"),
+         year = year(date),
+         fiscal_year = ifelse(month(date) >=10, year+1,year)) %>% 
+    #date filter
+  filter(fiscal_year >= 2020) %>% 
+  summarise(across(encounter_count,sum), .by = c(citizenship, fiscal_year)) |> 
+  mutate(share = encounter_count/sum(encounter_count)*100,
+         other = ifelse(citizenship == "Other", NA, citizenship),
+         .by = fiscal_year) %>% 
+  ggplot(aes(area = share,
+             fill = other,
+             label = ifelse(share > 0,
+                            paste0(str_to_title(citizenship),
+                                   "\n ",
+                                   round(share, 0),
+                                   "%"),
+                           paste0(str_to_title(citizenship),
+                                  " ",
+                                  round(share, 0),
+                                  "%"))))+
+  facet_wrap(~fiscal_year, 
+             labeller = as_labeller(~paste("FY", .)))+
+  geom_treemap(size = 3, color = "white",start = "topleft")+
+  geom_treemap_text(place = "center",
+                    grow = F,
+                    size = 10,
+                    color = "white",
+                    fontface = "bold",
+                    start = "topleft",
+                    family = "Gill Sans")+
+  
+  guides(fill = "none")+
+  labs(title = paste("Migrants Encountered in the Darien Gap"))+
+  scale_fill_metro(na.value = "grey80")+
+  theme_usaid_blue(base_family = "Gill Sans",
+                   base_size = 15,
+                   main_color_1 = main_color_2,
+       caption = caption_blurb_dap)+
+  theme(strip.text = element_markdown(family = "Cabin"))
+ggs(filename = "mu_charts/tree_dar_fy.jpg")
+
+```
+
+```{r Darien_Tree_CY}
+#| eval: false
+# find non-other countries by share cutoff
+dar_cit <- dar %>% 
+  mutate(sumenc = sum(encounter_count)) %>%
+  summarise(sumcit = sum(encounter_count),.by = c(citizenship,sumenc)) %>% 
+  mutate(freq = round(sumcit/sumenc,2)) %>% 
+  #cutoff
+  filter(freq > .01) %>% 
+  pull(citizenship)
+
+dar %>%
+
+  #make anything less than .01% of encounter_count as "other
+  mutate(citizenship = ifelse(citizenship %in% dar_cit,
+                              citizenship,
+                              "Other"),
+         year = year(date),
+         fiscal_year = ifelse(month(date) >=10, year+1,year)) %>% 
+    #date filter
+  filter(fiscal_year == 2024) %>% 
+  summarise(across(encounter_count,sum), .by = c(citizenship, year)) |> 
+  mutate(share = encounter_count/sum(encounter_count)*100,
+         other = ifelse(citizenship == "Other", NA, citizenship),
+         .by = year) %>% 
+ ggplot(aes(area = share,
+             fill = other,
+             label = ifelse(share > 0,
+                            paste0(str_to_title(citizenship),
+                                   "\n ",
+                                   round(share, 0),
+                                   "%"),
+                           paste0(str_to_title(citizenship),
+                                  " ",
+                                  round(share, 0),
+                                  "%"))))+
+  geom_treemap(size = 3, color = "white",start = "topleft")+
+  geom_treemap_text(place = "center",grow = F,size = 18,start = "topleft", family = "Gill Sans",color= "white", fontface = "bold")+
+  guides(fill = "none")+
+  labs(title = paste("Migrants Encountered in the Darien Gap |",
+                     "FY",year2))+
+  scale_fill_cbp(na.value = "grey70")+
+  theme_usaid_blue(base_family = "Gill Sans",
+                   base_size = 15,
+                   main_color_1 = main_color_2,
+       caption = caption_blurb_dap)
+ggs(filename = "mu_charts/dar_cy_tree.jpg")
+
+```
+
+```{r Darien_area_freq}
+dar |>
+  mutate(citizenship = ifelse(!citizenship %in% c("HAITI", "VENEZUELA", "ECUADOR"),"OTHER",citizenship),
+         .by = citizenship) |>
+  summarise(across(encounter_count,sum, na.rm = T),
+            .by = c(citizenship,date)) |>
+  mutate(citizenship = case_when(citizenship =="Brasil (1)" ~ "Brasil",
+                   citizenship == "Chile (1)" ~ "Chile",
+                   T ~ citizenship)) |>
+  mutate(citizenship = fct_reorder(citizenship,encounter_count,sum,.desc = T),
+         citizenship = fct_relevel(citizenship,"VENEZUELA",after = 3)) |> 
+  mutate(freq = encounter_count/sum(encounter_count),.by = date) %>% 
+  drop_na() |>
+  ggplot(aes(x = date,
+             y = freq,
+             fill = citizenship)
+         )+
+  scale_x_date(breaks = tm_db(month2, n = 1), date_labels = "%b '%y")+
+  scale_y_continuous(labels = label_percent(),
+                     breaks = c(.25,.5,.75)
+                     #sec.axis = dup_axis(name = "", trans = ~.)
+                     )+
+  #geom_area(alpha = 1)+
+  
+  stat_smooth(span = .15,se = F,position = "stack", geom = "area")+
+  geom_smooth(span = .15,se = F,position = "stack",color = "black",linewidth = .5)+
+  #geom_line(position = "stack",size = .5)+
+  # geom_col()+
+  labs(title = "Migrants Encountered in the Darien Gap",
+       fill = "**Nationality:**",
+       subtitle = "Share of Encounters",
+       y = NULL,
+       x = NULL)+
+  geom_text_repel(
+    data = . %>% filter(date == date2),
+    aes(label = citizenship,
+        color = citizenship),
+    family = "Gill Sans",
+    fontface  = "bold",
+    size = 5,
+    position = position_stacknudge(x = 30,vjust = .5)
+  )+
+  theme_usaid_blue(caption = cap$dar,
+                   main_color_1 = main_color_2,
+                   base_size = 17, bl = F)+
+  theme(legend.position = "top",
+        axis.title.y = element_markdown(),
+        legend.title = element_textbox(),
+        plot.title.position = "plot")+
+  scale_fill_cbp(
+    )+
+  scale_color_cbp()+
+  guides(color = "none", fill = "none")+
+  coord_cartesian(expand = F, xlim = c(date2-30*12*3, date2+300))+
+  geom_rangeframe(sides = "bl")
+
+ggs(filename = "mu_charts/dar_area.jpg",width = 280)
+
+```
+
+```{r Darien_area_total}
+darasum <- dar |>
+  mutate(citizenship = ifelse(!citizenship %in% c("HAITI", "VENEZUELA", "ECUADOR"),
+                              "OTHER",
+                              citizenship)) |>
+  summarise(across(encounter_count,sum, na.rm = T), .by = c(citizenship,date)) |>
+  mutate(citizenship = fct_reorder(citizenship,encounter_count,sum,.desc = T),
+         citizenship = fct_relevel(citizenship,"OTHER", "HAITI", "ECUADOR","VENEZUELA",after = 3)) |> 
+  mutate(freq = encounter_count/sum(encounter_count),
+         esum = sum(encounter_count),.by = date) %>% 
+  drop_na()
+dar_bar_plot <- darasum %>% 
+  ggplot(aes(x = date,y = encounter_count, fill = citizenship))+
+  scale_x_date(breaks = tm_db(month2), date_labels = "%b '%y")+
+  scale_y_continuous(labels = ~round(./1000),
+                     breaks = c(max(darasum$esum), 0, darasum$esum[darasum$date == date2])
+                     #sec.axis = dup_axis(name = "", trans = ~.)
+                     )+
+  geom_chicklet(data = . %>% mutate(across(citizenship,fct_rev)),
+                color = "grey30"
+                )+
+  labs(title = "Migrants Encountered in the Darien Gap",
+       fill = "**Nationality:**",
+       subtitle = "Monthly Encounters <br> *(Thousands)*",
+       y = NULL,
+       x = NULL)+
+  theme_usaid_blue(caption = cap$dar,
+                   main_color_1 = main_color_2, bl = F,
+                   base_size = 18)+
+  theme(legend.position = "right",
+        axis.title.y = element_markdown(),
+        legend.title = element_markdown())+
+  scale_fill_cbp(
+    breaks = c("Other", "Haiti", "Ecuador","Venezuela") %>% toupper()
+    )+
+  coord_cartesian(expand = F, xlim = c(date2-30*12*3, date2+200),
+                  ylim = c(0,9e4))+
+  geom_rangeframe(sides = "bl", position = "stack")+
+  geom_text_repel(
+    data = . %>% filter(date == date2),
+    aes(label = citizenship,
+        color = citizenship),
+    family = "Gill Sans",
+    segment.linetype = "dotted",
+    segment.curvature = -.2,
+    direction = "y",
+    fontface  = "bold",
+    size = 4,
+    hjust = 0,
+    force = .9,
+    position = position_stacknudge(x =40,vjust = .5)
+  )+
+  geom_text(aes(label = round(esum/1e3,0), y = esum),
+             family = "Gill Sans",
+            vjust =-.3)+
+    geom_text(aes(label = round(encounter_count/1e3,0)),
+                data = .%>% filter(date == date2,encounter_count >2e3),
+             family = "Gill Sans",
+            fontface = "bold",
+            color = "white",
+            size = 3,
+            hjust = .5,
+            label.padding = unit(.4, "mm"),
+            position = position_stacknudge(x = 0, vjust = .5))+
+  scale_color_cbp()+
+  guides(color = "none", fill = "none")
+
+
+ggs(
+  plot = dar_bar_plot, 
+  category = "encounters", 
+  charttype = "bars",
+  subset = "dar", 
+  demographics = NULL, 
+  additionalinfo = NULL, 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+```
+
+## Mexico Graphs
+
+```{r ret_enc_total}
+ret<- edata$ret
+
+
+mexre <- mex %>% summarise(across(encounter_count,sum),.by = date) %>% 
+  left_join(
+ret %>% summarise(across(returns,sum),.by = date)) %>% 
+  pivot_longer(-date)
+ret_mex_plot <-mexre %>% 
+  ggplot(aes(x = date, y = value, color = name))+
+  scale_color_metro()+
+  geom_xspline(show.legend = F)+
+  geom_point(data = . %>% filter(date == max(date)),
+             show.legend = F)+
+  theme_usaid_blue(bl = F,caption = "Data from GOM | Chart compiled by USAID/LAC",
+                   base_size = 19,
+                   main_color_1 = "darkgreen")+
+  scale_y_continuous(labels = ~./1e3,
+                     sec.axis = dup_axis(name = "",
+                                         breaks = mexre$value[mexre$date == max(mexre$date)],
+                                         labels = label_number(accuracy = 2.1,scale = 1/1e3)))+
+  geom_rangeframe(sides = "brl", data = . %>% drop_na())+
+  guides(color = "none")+
+  labs(y = NULL,
+       x = NULL,
+       title = "Government of Mexico Migrant Encounters vs. Returns",
+       subtitle = "Thousands of Encounters & Returns"
+       )+
+  geom_segment(aes(x = date2,
+                   xend = date2 + 300,
+                   y = value[which(date == date2)],
+                   yend = value[which(date == date2)]),
+               inherit.aes = F,
+               linetype = "dotted",
+               color = "grey",
+               data = . %>% filter(date == date2))+
+  scale_x_date(breaks = tm_db(month = month2, n = 1, year0 = 2018), date_labels = "%b '%y")+
+  pmap(
+    list(
+      c("Encounters", "Returns"),
+      c("encounter_count", "returns"),
+      c(2,2.5)
+    ),
+    ~ geom_textpath(
+      aes(label = ..1),text_only = T,
+      hjust = .15,
+      size = 5,
+      fontface = "bold",
+      text_smoothing = 50,
+      vjust = ..3,
+      data = . %>% filter(name == ..2)
+    )
+  )+
+  coord_cartesian(clip = "on",xlim = range(mexre$date),ylim = range(mexre$value)*1.01)
+ggs(
+  plot = ret_mex_plot, 
+  category = "encounters", 
+  charttype = "ts",
+  subset = "mex", 
+  demographics = NULL, 
+  additionalinfo = "ret", 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+```
+
+```{r}
+mex_nca <- mex %>% summarise(across(encounter_count,sum),.by = c(date,citizenship)) %>%
+  filter(citizenship %in% "VENEZUELA",
+         date >= "2020-01-01") 
+mex_nca_plot <- mex_nca %>% 
+  ggplot(aes(x = date, y = encounter_count))+
+   geom_ribbon(
+  aes(ymin = 0, ymax = encounter_count),
+  fill = "lightgreen",   # Specific color choice
+  alpha = 0.2,
+  inherit.aes = TRUE
+)+ 
+  geom_xspline(show.legend = F, color = "darkgreen")+
+  geom_point(data = . %>% filter(date == max(date)),
+             color = "darkgreen",
+             show.legend = F)+
+  theme_usaid_blue(bl = F,caption = "Data from GOM | Chart compiled by USAID/LAC",
+                   base_size = 19,
+                   main_color_1 = "darkgreen")+
+  geom_rangeframe(sides = "lb", data = . %>% drop_na(),color = "black")+
+  guides(color = "none")+
+  labs(y = NULL,
+       x = NULL,
+       title = "Northern Central Amer Migrant Events in Mexico",
+       subtitle = "Thousands of Encounters"
+       )+
+  geom_rangeframe(sides = "rb", color = "black") +
+  geom_rangeframe(sides = "br", color = "black") +
+  
+  # Add Rug on Right Side
+  geom_rug(
+    sides = "r",
+    length = unit(0.01, "npc")
+    # Uncomment and modify the next line if filtering is needed
+    # data = ~ .x |> filter(fiscal_year(date) >= 2023)
+  ) +
+  scale_y_continuous(
+    breaks = c(
+      min(mex_nca$encounter_count),
+      mex_nca$encounter_count[mex_nca$date == max(mex_nca$date)],
+      max(mex_nca$encounter_count)
+    ),
+    labels = ~ floor(. / 1e3),
+    limits = c(0, 3.1e5),
+    expand = c(0, 0),
+    sec.axis = dup_axis(name = "")
+  )+
+  geom_segment(aes(x = date2,
+                   xend = date2 + 300,
+                   y = encounter_count[which(date == date2)],
+                   yend = encounter_count[which(date == date2)]),
+               inherit.aes = F,
+               linetype = "dotted",
+               color = "grey",
+               data = . %>% filter(date == date2))+
+  scale_x_date(breaks = tm_db(month = month2, n = 1, year0 = 2018), date_labels = "%b '%y")+
+  coord_cartesian(clip = "on",xlim = c(as_date("2020-01-01"), max(mex$date)),ylim = range(mex_nca$encounter_count)*1.02)+
+  geom_vline(xintercept = as_date("2024-07-28"), linetype = "dotted", color = "grey20")+
+  geom_label(aes(x = as_date("2024-07-28"), y = 1e4, label = "VZ\nElection"),
+            hjust = .5, vjust = 0, color = "black", size = 4,fill = "transparent")
+
+
+ggs(
+  plot = mex_nca_plot, 
+  category = "encounters", 
+  charttype = "spag",
+  subset = "mex", 
+  demographics = "nca", 
+  folder = "ven_charts",
+  extension = ".jpg",
+  width = 250, 
+  height = 150,
+)
+```
+
+```{r mex tree}
+mex_tree_year <- mex |>
+  mutate(fiscal_year = fiscal_year(date),
+         year = year(date)) %>% 
+  filter(fiscal_year == 2024,
+         #date == date2
+         ) %>%
+  mutate(se = sum(encounter_count))%>% 
+  mutate(.by = citizenship,
+         citizenship = ifelse(sum(encounter_count)/se > .02, citizenship, "Other")) %>% 
+  summarise(across(encounter_count,sum),.by = c(citizenship)) %>% 
+  mutate(share = encounter_count/sum(encounter_count)*100,
+         other = ifelse(citizenship == "Other", NA, citizenship),
+         subregion = case_when(
+                               citizenship %in% c(nca, "NICARAGUA")~"nca",
+                               citizenship %in% c("VENEZUELA","COLOMBIA", "PERU", "ECUADOR", "BRAZIL")~"sa",
+                               T ~"Other")
+         ) |> 
+  arrange(-share) %>% 
+  mutate(cs = cumsum(share)) %>% 
+  ggplot(aes(area = share,
+             fill = other,
+             subgroup = subregion,
+             label = ifelse(share > 1,
+                            paste0(str_to_title(citizenship),
+                                   "\n ",
+                                   round(share, 0),
+                                   "%"),
+                           paste0(str_to_title(citizenship),
+                                  " ",
+                                  round(share, 0),
+                                  "%"))))+
+  geom_treemap(size = 3, color = "white",start = "topleft")+
+  geom_treemap_subgroup_border(start = "topleft", color = "white",size = 4)+
+  geom_treemap_text(place = "center",grow = F,aes(color = citizenship),
+                    size = 18,start = "topleft",
+                    family = "Gill Sans",
+                    fontface = "bold")+
+  scale_color_manual(values = c("SENEGAL" = "grey50",
+                                "HAITI" = "grey50",
+                                "DOMINICAN REPUBLIC" = "grey50"),na.value = "white")+
+  
+  
+  guides(fill = "none")+
+  labs(title = paste("Migrants Encountered in Mexico |",
+                     "Fiscal Year 2024"))+
+  scale_fill_cbp(na.value = "grey80")+
+  theme_usaid_blue(base_family = "Gill Sans",base_size = 20,
+                   caption = "Data from GOM | chart created by USAID/LAC",
+                   main_color_1 = "darkgreen")
+
+ggs(
+  plot = mex_tree_year, 
+  category = "encounters", 
+  charttype = "tree",
+  subset = "mex", 
+  demographics = NULL, 
+  additionalinfo = NULL, 
+  folder = "mu_charts", 
+  width = 250, 
+  height = 150,
+)
+
+```
+
+#Colombia graphs
+
+```{r colu 1}
+
+colu2 <- colu$regular %>% 
+  filter(nationality == "Venezuela",
+         entrada_salida == "Entradas") %>% 
+  summarise(across(count,sum),.by = date) %>% 
+  mutate(comonent = "Regular\nArrivals") %>%
+  rename(arrivals = count) %>% 
+bind_rows(
+
+  colu$encounter %>% filter(nacionalidad == "Venezuela") %>% 
+    summarise(across(total,sum),.by = date) %>% 
+    rename(arrivals = total) %>% 
+    mutate(component = "Irregular\nEncounters")
+)
+colu_plot <- colu2 %>%
+  arrange(date) %>% 
+  ggplot(aes(x = date, y = arrivals, color = component))+
+  geom_xspline()+
+  theme_usaid_blue(bl = F, base_size = 19,
+                   caption = "Data from Migracion Colombia, chart compiled by USAID/LAC")+
+  geom_point(data = . %>% filter(date == max(date),.by = component))+
+  scale_x_date(breaks = tm_db(month2, n = 1),
+               date_labels = "%b '%y",
+               minor_breaks = seq(min(colu2$date),max(colu2$date),by = "1 month"))+
+  guides(x = guide_axis(minor.ticks = T),
+         color = "none")+
+  labs(y = NULL,
+       x = NULL,
+       title = "Venezuelan Arrivals in Colombia")+
+  geom_text_repel(
+    aes(label = c("Regular\nArrivals","Irregular\nEncounters")),
+    data = .%>% filter(date == max(date),.by = component),
+    fontface = "bold",
+    family = "Gill Sans",
+    size = 4,
+    nudge_x = 50,
+  )+
+  scale_y_continuous(breaks = c(0,2e4,4e4,6e4),
+                     labels = c("0","20", "40", "60\nThousand"))+
+  geom_vline(xintercept = as_date("2024-07-28"), linetype = "dotted", color = "grey20")+
+  geom_label(aes(x = as_date("2024-07-28"), y = 1e4, label = "VZ\nElection"),
+            hjust = .5, vjust = 0, color = "black", size = 4,fill = "white")
+
+
+ggs(
+  plot = colu_plot, 
+  category = "encounters", 
+  charttype = "ts",
+  subset = "col", 
+  demographics = NULL, 
+  additionalinfo = NULL, 
+  folder = "ven_charts", 
+  width = 250, 
+  height = 150,
+)
+
+```
+
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> 8672db8fffd19f60ab26a6766c4ce37440fc2bcb
+```{r}
+colu$encounter %>% 
+  mutate(fiscal_year = fiscal_year(date)) %>% 
+ # filter(fiscal_year == 2024) %>% 
+  summarise(across(total,sum),.by = c(fiscal_year)) %>% 
+  arrange(desc(total)) %>% 
+  mutate(pct = total/sum(total)*100)
+
+colu$regular %>% 
+  filter(nationality == "Venezuela",
+         entrada_salida == "Entradas",
+         #motivo_viaje == "Tránsito"
+         ) %>% 
+  summarise(across(count,sum),.by = c(date)) %>% 
+  arrange(date) %>% 
+  ungroup() %>% 
+  mutate(count/count[date == "2024-07-01"]-1)
+
+colu$regular %>% 
+  filter(nationality == "Venezuela",
+         entrada_salida == "Entradas") %>% 
+  mutate(fiscal_year = fiscal_year(date)) %>%
+  summarise(across(count,sum),.by = fiscal_year) %>% 
+  mutate(pct = count/count[fiscal_year == 2023]-1)
+
+
+colu$regular %>% 
+  filter(fiscal_year(date) == 2024) %>% 
+  filter(entrada_salida == "Entradas") %>% 
+  summarise(across(count,sum),.by = c(nationality)) %>% 
+  arrange(desc(count)) %>% 
+  mutate(pct = count/sum(count)*100)
+```
+<<<<<<< HEAD
+=======
+
+>>>>>>> 8672db8fffd19f60ab26a6766c4ce37440fc2bcb
