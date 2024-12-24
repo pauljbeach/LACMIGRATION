@@ -46,7 +46,14 @@ cbp_all <- edata$cbp_all
 ## U.S. Graphs
 
 ### Aggregate Time Series
+<<<<<<< HEAD
 
+=======
+<<<<<<< HEAD
+
+=======
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ```{r LT TS}
 
 swb60 <- pdf_text("Encounter Data/swb60-20.PDF") %>% 
@@ -969,6 +976,14 @@ ggplot(cbp_hist, aes(x = fiscal_year, y = apps))+
 ggs(filename = "mu_charts/monthly_avg_us.png",height = 125)
 ```
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ### Country Level
 
 ```{r ts_graph function}
@@ -1347,6 +1362,13 @@ ggs(
 )
 ```
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ```{r NCA per cap}
 
 nca_pc_plot <- swb %>% 
@@ -1563,7 +1585,14 @@ ggs(
   height = 150,
 )
 ```
+<<<<<<< HEAD
 
+=======
+<<<<<<< HEAD
+
+=======
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ```{r TOP 5 per cap}
 top5 <- swb |> 
   filter(!citizenship %in% c("MEXICO", "EL SALVADOR", "GUATEMALA", "HONDURAS", "OTHER"),
@@ -1636,6 +1665,13 @@ ggs(
    
 ```
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ```{r CHNV}
 chnv_plot <- cbp_all |>
   filter(citizenship %in% c("CUBA", "NICARAGUA", "VENEZUELA", "HAITI"),
@@ -1703,6 +1739,13 @@ chnv_plot <- cbp_all |>
   )
 ```
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ```{r}
 chnv_ven_plot <- cbp_all |>
   filter(citizenship %in% c(
@@ -1777,6 +1820,13 @@ chnv_ven_plot <- cbp_all |>
   )
 ```
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ## Tables
 
 ```{r table prep v2}
@@ -2217,6 +2267,13 @@ mig_tables[1:3] |>
 
 ## Darien Graphs
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ```{r Darien_TS}
 
 
@@ -2424,6 +2481,13 @@ ggs(
 
 ```
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ```{r Darien_area_freq}
 #| eval: false
 dar |>
@@ -2566,6 +2630,13 @@ ggs(
 )
 ```
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ## Mexico Graphs
 
 ```{r ret_enc_total}
@@ -2635,6 +2706,13 @@ ggs(
 )
 ```
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ```{r mex_ncaplot}
 mex_nca <- mex %>% summarise(across(encounter_count,sum),.by = c(date,citizenship)) %>%
   filter(citizenship %in% c(nca, "NICARAGUA")) 
@@ -2754,6 +2832,13 @@ ggs(
 
 ```
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 #Colombia graphs
 
 ```{r colombia plot}
@@ -2829,6 +2914,13 @@ ggs(
 )
 ```
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 #Annex (Old Graphs Eval = FALSE)
 
 ```{r LT TS ENC}
@@ -2941,7 +3033,14 @@ ggs(
   height = 170
 )
 ```
+<<<<<<< HEAD
 
+=======
+<<<<<<< HEAD
+
+=======
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
 ```{r parole_area}
 #| eval: false
 parole_plot <- swb |>
@@ -3049,4 +3148,12 @@ ggs(
   dpi = 200,
   height = 150
 )
+<<<<<<< HEAD
 ```
+=======
+<<<<<<< HEAD
+```
+=======
+```
+>>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
+>>>>>>> origin/main
