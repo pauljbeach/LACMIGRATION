@@ -46,20 +46,7 @@ cbp_all <- edata$cbp_all
 ## U.S. Graphs
 
 ### Aggregate Time Series
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
 
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-
-=======
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ```{r LT TS}
 
 swb60 <- pdf_text("Encounter Data/swb60-20.PDF") %>% 
@@ -982,20 +969,7 @@ ggplot(cbp_hist, aes(x = fiscal_year, y = apps))+
 ggs(filename = "mu_charts/monthly_avg_us.png",height = 125)
 ```
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-=======
 
-
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ### Country Level
 
 ```{r ts_graph function}
@@ -1374,19 +1348,7 @@ ggs(
 )
 ```
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-=======
 
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ```{r NCA per cap}
 
 nca_pc_plot <- swb %>% 
@@ -1603,20 +1565,7 @@ ggs(
   height = 150,
 )
 ```
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
 
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-
-=======
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ```{r TOP 5 per cap}
 top5 <- swb |> 
   filter(!citizenship %in% c("MEXICO", "EL SALVADOR", "GUATEMALA", "HONDURAS", "OTHER"),
@@ -1689,19 +1638,7 @@ ggs(
    
 ```
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-=======
 
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ```{r CHNV}
 chnv_plot <- cbp_all |>
   filter(citizenship %in% c("CUBA", "NICARAGUA", "VENEZUELA", "HAITI"),
@@ -1769,19 +1706,7 @@ chnv_plot <- cbp_all |>
   )
 ```
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-=======
 
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ```{r}
 chnv_ven_plot <- cbp_all |>
   filter(citizenship %in% c(
@@ -1856,19 +1781,7 @@ chnv_ven_plot <- cbp_all |>
   )
 ```
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-=======
 
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ## Tables
 
 ```{r table prep v2}
@@ -2309,19 +2222,7 @@ mig_tables[1:3] |>
 
 ## Darien Graphs
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-=======
 
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ```{r Darien_TS}
 
 
@@ -2529,19 +2430,7 @@ ggs(
 
 ```
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-=======
 
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ```{r Darien_area_freq}
 #| eval: false
 dar |>
@@ -2684,19 +2573,7 @@ ggs(
 )
 ```
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-=======
 
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ## Mexico Graphs
 
 ```{r ret_enc_total}
@@ -2766,19 +2643,7 @@ ggs(
 )
 ```
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-=======
 
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ```{r mex_ncaplot}
 mex_nca <- mex %>% summarise(across(encounter_count,sum),.by = c(date,citizenship)) %>%
   filter(citizenship %in% c(nca, "NICARAGUA")) 
@@ -2898,19 +2763,7 @@ ggs(
 
 ```
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-=======
 
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 #Colombia graphs
 
 ```{r colombia plot}
@@ -2986,19 +2839,7 @@ ggs(
 )
 ```
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-=======
 
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 #Annex (Old Graphs Eval = FALSE)
 
 ```{r LT TS ENC}
@@ -3111,20 +2952,7 @@ ggs(
   height = 170
 )
 ```
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
 
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-
-=======
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
 ```{r parole_area}
 #| eval: false
 parole_plot <- swb |>
@@ -3232,18 +3060,5 @@ ggs(
   dpi = 200,
   height = 150
 )
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
+
 ```
-=======
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
-<<<<<<< HEAD
-```
-=======
-```
->>>>>>> c4d3ecdd0d94e692f3540c9ec3cf5e9d2dd2e268
-<<<<<<< HEAD
-=======
->>>>>>> origin/main
->>>>>>> 45a30ab7ef60fb3a552747e81f8c021ef78919b3
