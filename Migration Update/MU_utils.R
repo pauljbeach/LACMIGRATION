@@ -31,13 +31,24 @@ get_date <- function(month, year) {
 }
 
 # Updated function
-setup_migration_datasets <- function(month, year, fy = F, date_csv_path = "fallback_data/latest_dates.csv") {
+setup_migration_datasets <- function(month,
+                                     year,
+                                     fy = F,
+                                     skip_update = T,
+                                     date_csv_path = here("Migration Update", "fallback_data", "latest_dates.csv")) {
+  
+  
+  user_input <- readline("Enter 1 to attempt to update datasets, or anything else to use fallback datasets: ")
+  user_input <- as.numeric(user_input)
+  
   # Define fallback datasets
-  fallback_dar <- "fallback_data/fallback_dar.csv"
-  fallback_mex <- "fallback_data/fallback_mex.csv"
-  fallback_ret <- "fallback_data/fallback_ret.csv"
-  fallback_swb <- "fallback_data/fallback_cbp.csv"
-  fallback_cbp <- "fallback_data/fallback_cbp_all.csv"
+  fallback_dar <- here("Migration Update", "fallback_data", "fallback_dar.csv")
+  fallback_mex <- here("Migration Update", "fallback_data", "fallback_mex.csv")
+  fallback_ret <- here("Migration Update", "fallback_data", "fallback_ret.csv")
+  fallback_swb <- here("Migration Update", "fallback_data", "fallback_cbp.csv")
+  fallback_cbp <- here("Migration Update", "fallback_data", "fallback_cbp_all.csv")
+  
+  
   
   # Calculate the date to be checked for all datasets
   data_date <- as.Date(paste(year, month, "01", sep = "-"), "%Y-%b-%d")
@@ -51,6 +62,8 @@ setup_migration_datasets <- function(month, year, fy = F, date_csv_path = "fallb
       latest_date = as.Date(NA)
     )
   }
+  
+  if (!is.na(user_input) && user_input == 1) {
   
   message("Starting data setup for migration datasets...")
   
@@ -176,7 +189,6 @@ setup_migration_datasets <- function(month, year, fy = F, date_csv_path = "fallb
   
   message("Data setup completed successfully or with fallback datasets.")
   
-  # Return all datasets and the list of latest dates
   list(
     dar = dar,
     mex = mex,
@@ -185,6 +197,22 @@ setup_migration_datasets <- function(month, year, fy = F, date_csv_path = "fallb
     cbp_all = cbp_all,
     latest_dates = latest_dates
   )
+  }
+  else {
+    message("Using fallback datasets...")
+    
+    list(
+      dar = read_csv(fallback_dar,show_col_types = FALSE),
+      mex = read_csv(fallback_mex,show_col_types = FALSE),
+      ret = read_csv(fallback_ret,show_col_types = FALSE),
+      swb = read_csv(fallback_swb,show_col_types = FALSE),
+      cbp_all = read_csv(fallback_cbp,show_col_types = FALSE),
+      latest_dates = latest_dates
+    )
+  }
+  
+  # Return all data sets and the list of latest dates
+ 
 }
 
 load_dates <- function(month2, year2 = 2024){

@@ -15,6 +15,15 @@ main_color_1 <- "#002F6C"
 main_color_2 <- "#BA2D42"
 
 
+if (Sys.info()['sysname'] == 'Darwin') {
+  sysfonts::font_add("Source Sans 3",
+                     regular = "/Library/Fonts/SourceSans3-Regular.ttf",
+                     "/Library/Fonts/SourceSans3-Bold.ttf",
+                     "/Library/Fonts/SourceSans3-Italic.ttf",
+                     "/Library/Fonts/SourceSans3-BoldItalic.ttf"
+  )
+}
+
 # Theme USAID -------------------------------------------------------------
 
 #' A USAID-Flavored Theme
@@ -55,6 +64,8 @@ theme_usaid_blue <- function(
     caption  = NULL,
     title    = NULL,
     subtitle = NULL,
+    main_color_1 = "#002F6C",
+    main_color_2 = "#BA2D42",
     ...
 ) {
   # If caption is not null, replace "USAID" with HTML-styled text

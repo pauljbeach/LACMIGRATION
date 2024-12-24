@@ -109,7 +109,7 @@ pull_cbp <- function(month,year = 2024,swb = T,force = F,fy = F, hardlink = NULL
   return(cbp2)
 }
 
-
+øøøøø
 
 # Pull GOM ----------------------------------------------------------------
 
@@ -153,7 +153,8 @@ pull_mex <- function(year = 2024,manuallink = NULL,...){
     mutate(date = ym(paste(year, month)),
            country_es = case_when(country_es == "Dominicana, Rep." ~"República Dominicana",
                                   T ~ country_es),
-           encounters = parse_number(encounters))
+           
+           encounters = as.character(encounters) %>% parse_number())
 }
 
 
@@ -1212,4 +1213,34 @@ make_dp <- function(df){
                          stateless,
                          oip),~as.numeric(.) %>% replace_na(0)),
                 dp = refugees+asylum_seekers+oip)
+}
+
+
+
+label_maxunit <- function(digits = 2) {
+  function(x) {
+    # Identify the maximum break value
+    max_break <- max(x, na.rm = TRUE)
+    
+    # Determine the appropriate unit and divisor
+    if (max_break >= 1e6) {
+      unit <- "M"
+      divisor <- 1e6
+    } else if (max_break >= 1e3) {
+      unit <- "K"
+      divisor <- 1e3
+    } else {
+      unit <- ""
+      divisor <- 1
+    }
+    
+    # Divide all labels by the divisor and format them
+    formatted_labels <- signif(x / divisor, digits)
+    formatted_labels <- as.character(formatted_labels)
+    
+    # Append the unit modifier only to the largest label
+    formatted_labels[x == max_break] <- paste0(formatted_labels[x == max_break], unit)
+    
+    return(formatted_labels)
+  }
 }
