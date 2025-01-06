@@ -15,6 +15,15 @@ main_color_1 <- "#002F6C"
 main_color_2 <- "#BA2D42"
 
 
+if (Sys.info()['sysname'] == 'Darwin') {
+  sysfonts::font_add("Source Sans 3",
+                     regular = "/Library/Fonts/SourceSans3-Regular.ttf",
+                     "/Library/Fonts/SourceSans3-Bold.ttf",
+                     "/Library/Fonts/SourceSans3-Italic.ttf",
+                     "/Library/Fonts/SourceSans3-BoldItalic.ttf"
+  )
+}
+
 # Theme USAID -------------------------------------------------------------
 
 #' A USAID-Flavored Theme
@@ -55,6 +64,111 @@ theme_usaid_blue <- function(
     caption  = NULL,
     title    = NULL,
     subtitle = NULL,
+    main_color_1 = "#002F6C",
+    main_color_2 = "#BA2D42",
+    ...
+) {
+  # If caption is not null, replace "USAID" with HTML-styled text
+  if (!is.null(caption)) {
+    caption <- str_replace_all(
+      caption,
+      "USAID",
+      "<span style = 'color:#002F6C'>US<span style = color:#BA2D42>AID</span></span>"
+    )
+  }
+  
+  list(
+    # Base Tufte theme
+    theme_tufte(...),
+    
+    # Override default theme elements
+    theme(
+      plot.title = element_textbox_simple(
+        margin = margin(5, 5, 5, 5),
+        family = title_family,
+        size   = rel(1.03),
+        face   = "bold",
+        color  = main_color_1
+      ),
+      plot.subtitle = element_textbox_simple(
+        margin = margin(5, 5, 12, 5),
+        color  = title_color,
+        family = title_family
+      ),
+      strip.text = element_markdown(
+        family = base_family,
+        color  = label_color
+      ),
+      strip.text.y = element_markdown(
+        family = base_family,
+        color  = label_color
+      ),
+      plot.title.position = "plot",
+      legend.text = element_text(
+        family = base_family,
+        color  = label_color
+      ),
+      plot.caption = element_textbox_simple(
+        family = base_family,
+        margin = margin(10, 5, 5, 5),
+        color  = caption_color,
+        halign = 1,
+        size   = rel(0.6)
+      ),
+      legend.title = element_text(
+        family = base_family,
+        color  = title_color
+      ),
+      axis.title.y = element_markdown(
+        color  = title_color,
+        family = base_family,
+        halign = 0.5,
+        size   = rel(1)
+      ),
+      axis.title.x = element_markdown(
+        color  = title_color,
+        family = base_family,
+        size   = rel(1)
+      ),
+      axis.text = element_markdown(
+        color  = label_color,
+        family = base_family,
+        size   = rel(.8)
+      ),
+      legend.position = "bottom"
+    ),
+    
+    # Add range frame if rf = TRUE
+    if (rf) geom_rangeframe(color = title_color) else geom_rangeframe(sides = ""),
+    
+    # Conditionally add labs for caption, title, subtitle
+    if (is.null(caption)) labs() else labs(caption = caption),
+    if (is.null(title))   labs() else labs(title   = str_to_upper(title)),
+    if (is.null(subtitle)) labs() else labs(subtitle = subtitle),
+    
+    # Conditionally add major grid lines if bl = TRUE
+    if (isFALSE(bl)) {
+      theme()
+    } else {
+      theme(
+        panel.grid.major.y = element_line(
+          linetype  = "solid",
+          color     = "#D3D3D3",
+          linewidth = 0.25
+        )
+      )
+    }
+  )
+}
+
+theme_usaid <- function(
+    rf       = FALSE,
+    bl       = FALSE,
+    caption  = NULL,
+    title    = NULL,
+    subtitle = NULL,
+    main_color_1 = "#002F6C",
+    main_color_2 = "#BA2D42",
     ...
 ) {
   # If caption is not null, replace "USAID" with HTML-styled text
@@ -148,8 +262,6 @@ theme_usaid_blue <- function(
     }
   )
 }
-
-
 
 
 theme_usaid_void <- function(base_family = "Gill Sans MT",

@@ -1,0 +1,998 @@
+---
+title: "Slide Deck Migration"
+format: html
+editor: visual
+---
+
+```{r LT TS}
+swb60 <- pdf_text("Encounter Data/swb60-20.PDF") %>%
+  str_split(pattern = "\n") %>%
+  map(~ str_split(., " ")) %>%
+  .[[1]] %>%
+  map(~ .[!. %in% ""]) %>%
+  map(~ .[c(1, 11)]) %>%
+  .[c(9:69)]
+
+swb60t <- tibble(
+  fiscal_year = map_chr(swb60, ~ pluck(., 1)),
+  enc = map_chr(swb60, ~ pluck(., 2))
+) %>%
+  mutate(across(enc, ~ str_remove_all(., "[:punct:]"))) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  rename(swb_apps = enc)
+
+apps <- read.csv("Encounter Data/apps_hist.csv") %>%
+  t() %>%
+  as_tibble(rownames = "x1") %>%
+  mutate(
+    x1 = str_remove(x1, "X"),
+    x1 = str_remove_all(x1, "\\.")
+  ) %>%
+  pull(x1)
+
+cbp_hist <- tibble(
+  fiscal_year = apps[1:length(apps) %% 2 == 1],
+  apps = apps[1:length(apps) %% 2 == 0]
+) %>%
+  mutate(across(c(fiscal_year, apps), as.numeric)) %>%
+  arrange(fiscal_year) %>%
+  filter(fiscal_year < 2020) %>%
+  left_join(swb60t) %>%
+  mutate(across(apps, ~ ifelse(!is.na(swb_apps), swb_apps, .))) %>%
+  select(-swb_apps) %>%
+  bind_rows(
+    cbp_all %>%
+      filter(land_border_region == "Southwest Land Border") %>%
+      filter(component != "Office of Field Operations") %>%
+      summarise(across(encounter_count, sum), .by = fiscal_year) %>%
+      rename(apps = encounter_count)
+  ) %>%
+  filter(fiscal_year <= 2024) %>%
+  # make average monthly
+  mutate(appsm = ifelse(fiscal_year == 2024, apps / (month(date2) + 3), apps / 12)) %>%
+  arrange(fiscal_year)
+
+
+lt_ts_plot <- ggplot(cbp_hist, aes(x = fiscal_year, y = apps)) +
+  # Apply custom theme
+  theme_usaid_blue(
+    base_size = 20,
+    title = "MIGRANT APPREHENSIONS AT THE U.S. SOUTHWEST BORDER <br>HAD 
+REACHED AN ALL-TIME HIGH",
+    subtitle = "Fiscal Year Apprehensions Between Ports of Entry | FY 1925 - FY 2024",
+    caption = paste(
+      cap$swb_alt,
+      "<br>Nationwide encounters were recorded annually before 1960"
+      # . Chart updated today()
+    )
+  ) +
+  # Y scale settings
+  scale_y_continuous(
+    breaks = c(5,10,15,20)*1e5,
+    labels = label_maxunit(abbr = FALSE),
+  ) +
+  # X scale settings
+  scale_x_continuous(
+    breaks  = c(seq(1925, 2000, 25), 2024),
+    labels  = c(seq(1925, 2000, 25), "2024"),
+    expand  = expansion(mult = c(0.01, 0.1))
+  ) +
+  # Highlight specific fiscal years
+  geom_point(
+    data = . %>% filter(fiscal_year %in% c(2024))
+  ) +
+  # Repeated label annotations
+  pmap(
+    list(
+      # Fiscal years, nudge_x, min.segment.length
+      c(2024,2023,2022),
+      c(1,1,1),
+      c(0)
+    ),
+    ~ geom_text_repel(
+      data = . %>% filter(fiscal_year %in% ..1),
+      aes(label = paste0(round(apps / 1e6, 1), "M")),
+      nudge_y = 0,
+      nudge_x = ..2,
+      hjust = 0,
+      size = 5,
+      family = "Source Sans 3",
+      direction = "y",
+      fontface = "bold",
+      # box.padding     = 0.9,   # Increase padding around labels
+      # point.padding   = 0.5,   # Padding around the point
+      # force           = 3,     # Spread out labels more
+      # max.overlaps    = 10,
+      segment.linetype = "dotted",
+      min.segment.length = ..3
+    )
+  ) +
+  # Draw rangeframe along bottom and left sides
+  geom_rangeframe(sides = "bl") +
+  # Titles and axis labels
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+  # Coordinate limits
+  coord_cartesian(
+    xlim = c(1925, 2030),
+    clip = "off",
+    expand = FALSE
+  ) +
+  # Minor theme tweaks
+  theme(
+    panel.border        = element_rect(size = 10, fill = NA, color = "transparent"),
+    plot.title.position = "plot",
+    plot.caption        = element_textbox(size = 10)
+  ) +
+  # Smooth line
+  geom_panel_lines() +
+  geom_xspline() +
+  stat_xspline(geom = "area", fill = usbphex, alpha = 0.3)
+
+
+# Export the plot
+ggs(
+  plot           = lt_ts_plot,
+  category       = "ltencounters",
+  subset         = "swb",
+  demographics   = NULL,
+  charttype      = "ts",
+  additionalinfo = "fy24aug",
+  extension      = ".png",
+  folder         = "slide_deck",
+  width          = 300,
+  height         = 170
+)
+
+```
+
+```{r SWB_monthly_TS}
+# Load data
+month_swbf <- read_csv(here("Encounter Data", "month_swbf (1).csv"))
+
+# Build & plot
+month_swbf_plot <- month_swbf %>%
+  bind_rows(
+    swb %>%
+      filter(component == "U.S. Border Patrol") %>%
+      summarise(across(encounter_count, sum), .by = date) %>%
+      filter(date > max(month_swbf$date))
+  ) %>%
+  arrange(desc(date)) %>%
+  mutate(year = year(date)) %>%
+  filter(year >= 2000) %>%
+  ggplot(aes(x = date, y = encounter_count)) +
+  # Custom theme
+  theme_usaid_blue(
+    base_size = 20,
+    subtitle = "Monthly Apprehensions Between Ports of Entry | 2000 - 2024",
+    title = "Migrants Apprehended at the U.S. Southwest Border",
+    caption = cap$swb_alt
+    # paste("<br>Chart updated", month(today(), abbr = TRUE, label = TRUE), year(today()))
+  ) +
+  # Highlight the latest data point
+  geom_point(
+    data = . %>% filter(date == max(date)),
+    show.legend = FALSE,
+    color = "black",
+    size = 1
+  ) +
+  # Customize y scale
+  scale_y_continuous(
+    breaks = seq(5e4, 2.5e5, 5e4),
+    labels = c("50", "100", "150", "200", "250K")
+  ) +
+  # Customize x scale
+  scale_x_date(
+    breaks      = seq.Date(as_date("2000-01-01"), as_date("2024-01-01"), by = "5 years") %>% c("2024-01-01"),
+    date_labels = "%Y"
+  ) +
+  # Light cleanup
+  theme(plot.title.position = "plot") +
+  labs(x = NULL, y = NULL) +
+  coord_cartesian(
+    clip = "off",
+    xlim = c(as.Date("2000-01-01"), max(month_swbf$date) + 650),
+    ylim = c(0, 2.5e5),
+    expand = FALSE
+  ) +
+  geom_panel_lines() +
+  # Label the latest data point
+  geom_text_repel(
+    data = . %>% filter(date == max(date)),
+    aes(label = paste0(round(encounter_count / 1e3), "K")),
+    hjust = 0,
+    nudge_x = 100,
+    size = 5,
+    family = "Source Sans 3",
+    fontface = "bold",
+    direction = "y"
+  ) +
+  # Smoothed area fill + outline
+  stat_xspline(geom = "area", fill = usbphex, alpha = 0.2) +
+  geom_xspline()
+
+# Export the plot
+ggs(
+  plot           = month_swbf_plot,
+  category       = "apprehensions",
+  subset         = "swb",
+  demographics   = NULL,
+  additionalinfo = "monthly_2020",
+  folder         = "mu_charts",
+  charttype      = "ts",
+  width          = 280,
+  height         = 170
+)
+```
+
+```{r SWB_TS}
+# Load Data
+
+swb_tsum <- swb %>%
+  mutate(fiscal_year = fiscal_year(date)) %>%
+  summarise(across(encounter_count, sum), .by = c(date, fiscal_year)) %>%
+  arrange(date)
+
+
+# Build & Plot
+
+swb_ts_plot <- swb_tsum %>%
+  ggplot(aes(x = date, y = encounter_count)) +
+  # Theme First: Title & Subtitle Here
+
+  theme_usaid_blue(
+    caption = paste(cap$swb_alt),
+    rf = TRUE,
+    base_size = 20,
+    title = "Migrants Encountered at the U.S. Southwest Border",
+    subtitle = paste(
+      "Monthly Encounters |",
+      month(range(swb_tsum$date)[1], label = TRUE, abbr = TRUE),
+      year(range(swb_tsum$date)[1]),
+      "-",
+      month(range(swb_tsum$date)[2], label = TRUE, abbr = TRUE),
+      year(range(swb_tsum$date)[2])
+    )
+  ) +
+
+
+  # Basic Axis Labels (no title/subtitle)
+
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+
+  # Highlight Specific Data Point
+
+  geom_point(
+    data  = . %>% filter(date == date2),
+    color = "black",
+    size  = 1.5
+  ) +
+
+
+  # labels
+
+  geom_text_repel(
+    aes(label = round(encounter_count / 1e3, 0) %>% paste0("K")),
+    data = . %>% filter(date == max(date)),
+    size = 5,
+    family = "Source Sans 3",
+    fontface = "bold",
+    direction = "y",
+    nudge_x = 20,
+    hjust = 0
+  ) +
+
+
+  # Y Scale
+
+  scale_y_continuous(
+    breaks = seq(1e5, 3e5, 1e5),
+    labels = c(100, 200, "300K"),
+    limits = c(0, 3.2e5),
+    expand = c(0, 0)
+  ) +
+
+
+  # X Scale
+
+  scale_x_date(
+    breaks       = seq.Date(my(paste(month2, 2014)), date2, by = "1 years"),
+    date_labels  = "%b '%y",
+    minor_breaks = seq.Date(min(swb_tsum$date), date2, by = "month")
+  ) +
+
+
+  # Coordinate Limits
+
+  coord_cartesian(
+    clip = "off",
+    expand = FALSE,
+    xlim = c(min(swb_tsum$date), max(swb_tsum$date) + 150),
+    ylim = c(0, max(swb_tsum$encounter_count) * 1.01)
+  ) +
+
+
+  # Additional Theme Tweaks
+
+  theme(
+    axis.minor.ticks.x.bottom = element_line(color = "grey")
+  ) +
+
+
+  # Remove Color Legend & Adjust X-Axis Guides
+  guides(
+    color = "none",
+    x = guide_axis(minor.ticks = TRUE)
+  ) +
+  geom_panel_lines() +
+
+
+  # Ribbon (Area Under the Curve)
+  stat_xspline(
+    geom  = "area",
+    fill  = "lightblue",
+    alpha = 0.2
+  ) +
+
+
+  # Spline Line
+
+  geom_xspline()
+
+
+# Export
+
+ggs(
+  plot         = swb_ts_plot,
+  folder       = "mu_charts",
+  category     = "encounters",
+  subset       = "swb",
+  extension    = ".png",
+  demographics = NULL,
+  charttype    = "ts",
+  width        = 280,
+  height       = 170
+)
+```
+
+```{r by POE all borders}
+
+# Data Filtering & Summarizing
+
+swb_tsum <- cbp_all %>%
+  filter(
+    # land_border_region == "Southwest Land Border",
+    fiscal_year >= 2019
+  ) %>%
+  summarise(
+    across(encounter_count, sum),
+    .by = c(date, fiscal_year, component)
+  ) %>%
+  mutate(
+    lab2 = ifelse(
+      component == "U.S. Border Patrol",
+      "Between\nPorts of Entry",
+      "At Ports of Entry"
+    )
+  )
+
+
+# Build & Plot
+
+component_plot <- swb_tsum %>%
+  ggplot(aes(x = date, y = encounter_count, color = component)) +
+
+
+  # Theme First (Title & Caption Inside)
+
+  theme_usaid_blue(
+    title = "Migrants Encountered at All U.S. Borders and Ports of Entry",
+    caption = paste(
+      cap$swb_alt, "<br>",
+      "Encounters at Ports of Entry defined as OFO inadmissibles and ",
+      "between ports of entry as USBP apprehensions"
+    ),
+    base_size = 20,
+    bl = FALSE
+  ) +
+
+
+  # Basic Axis Labels (No Title/Sub in Labs)
+
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+
+
+  # Y-Axis Scale
+
+  scale_y_continuous(
+    breaks = seq(0, 2.5e5, 5e4),
+    labels = c("0", "50", "100", "150", "200", "250K"),
+    limits = c(0, 3e5)
+  ) +
+
+  # ---------------------------
+  # X-Axis Scale
+  # ---------------------------
+  scale_x_date(
+    breaks      = tm_db(month = month2, year0 = 2018, n = 1),
+    date_labels = "%b '%y"
+  ) +
+
+
+  # Color Scale & Guide
+
+  scale_color_manual(
+    values = c("U.S. Border Patrol" = usbphex,
+               "Office of Field Operations" = ofohex)
+  ) +
+  guides(color = "none") +
+
+
+  # Coordinate & Clipping
+
+  coord_cartesian(
+    clip  = "off",
+    expand = FALSE,
+    xlim  = c(min(swb_tsum$date), max(swb_tsum$date) + 400),
+    ylim  = range(swb_tsum$encounter_count) * 1.01
+  ) +
+
+
+  # Mark Latest Data Point
+
+  geom_point(
+    data = . %>% filter(date == date2)
+  ) +
+
+
+  # Label the Latest Date
+
+  geom_text_repel(
+    data = . %>% filter(date == max(date)),
+    aes(label = lab2, color = component),
+    segment.linetype = "dotted",
+    hjust = 0,
+    clip = "off",
+    family = "Source Sans 3",
+    nudge_x = 50,
+    size = 5,
+    fontface = "bold",
+    direction = "y"
+  ) +
+
+
+  # Panel Lines & Spline
+
+  geom_panel_lines() +
+  geom_xspline() +
+
+
+  # Additional Theme Tweaks
+
+  theme(
+    legend.position = "top",
+    # Removed base_family here to avoid overwriting
+    axis.title.y = element_markdown(halign = 0.5),
+    plot.title = element_textbox_simple(margin = margin(5,5,10,5))
+  )
+
+
+# Export
+
+ggs(
+  plot          = component_plot,
+  category      = "encounters",
+  subset        = "swb",
+  demographics  = "component",
+  charttype     = "spaghetti",
+  folder        = "mu_charts",
+  width         = 280,
+  height        = 150,
+  dpi           = 300
+)
+```
+
+```{r LT TS}
+swb60 <- pdf_text("Encounter Data/swb60-20.PDF") %>%
+  str_split(pattern = "\n") %>%
+  map(~ str_split(., " ")) %>%
+  .[[1]] %>%
+  map(~ .[!. %in% ""]) %>%
+  map(~ .[c(1, 11)]) %>%
+  .[c(9:69)]
+
+swb60t <- tibble(
+  fiscal_year = map_chr(swb60, ~ pluck(., 1)),
+  enc = map_chr(swb60, ~ pluck(., 2))
+) %>%
+  mutate(across(enc, ~ str_remove_all(., "[:punct:]"))) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  rename(swb_apps = enc)
+
+apps <- read.csv("Encounter Data/apps_hist.csv") %>%
+  t() %>%
+  as_tibble(rownames = "x1") %>%
+  mutate(
+    x1 = str_remove(x1, "X"),
+    x1 = str_remove_all(x1, "\\.")
+  ) %>%
+  pull(x1)
+
+cbp_hist <- tibble(
+  fiscal_year = apps[1:length(apps) %% 2 == 1],
+  apps = apps[1:length(apps) %% 2 == 0]
+) %>%
+  mutate(across(c(fiscal_year, apps), as.numeric)) %>%
+  arrange(fiscal_year) %>%
+  filter(fiscal_year < 2020) %>%
+  left_join(swb60t) %>%
+  mutate(across(apps, ~ ifelse(!is.na(swb_apps), swb_apps, .))) %>%
+  select(-swb_apps) %>%
+  bind_rows(
+    cbp_all %>%
+      filter(land_border_region == "Southwest Land Border") %>%
+      filter(component != "Office of Field Operations") %>%
+      summarise(across(encounter_count, sum), .by = fiscal_year) %>%
+      rename(apps = encounter_count)
+  ) %>%
+  filter(fiscal_year <= 2024) %>%
+  # make average monthly
+  mutate(appsm = ifelse(fiscal_year == 2024, apps / (month(date2) + 3), apps / 12)) %>%
+  arrange(fiscal_year)
+
+
+lt_ts_plot <- ggplot(cbp_hist, aes(x = fiscal_year, y = apps)) +
+  # Apply custom theme
+  theme_usaid_blue(
+    base_size = 20,
+    title = "Migrants Apprehended at the U.S. Southwest Border",
+    subtitle = "Fiscal Year Apprehensions Between Ports of Entry | FY 1925 - FY 2024",
+    caption = paste(
+      cap$swb_alt,
+      "<br>Nationwide encounters were recorded annually before 1960"
+      # . Chart updated today()
+    )
+  ) +
+  # Y scale settings
+  scale_y_continuous(
+    breaks = c(5,10,15,20)*1e5,
+    labels = label_maxunit(),
+  ) +
+  # X scale settings
+  scale_x_continuous(
+    breaks  = c(seq(1925, 2000, 25), 2024),
+    labels  = c(seq(1925, 2000, 25), "2024"),
+    expand  = expansion(mult = c(0.01, 0.1))
+  ) +
+  # Highlight specific fiscal years
+  geom_point(
+    data = . %>% filter(fiscal_year %in% c(2024))
+  ) +
+  # Repeated label annotations
+  pmap(
+    list(
+      # Fiscal years, nudge_x, min.segment.length
+      c(2024),
+      c(1),
+      c(0)
+    ),
+    ~ geom_text_repel(
+      data = . %>% filter(fiscal_year %in% ..1),
+      aes(label = paste0(round(apps / 1e6, 1), "M")),
+      nudge_y = 0,
+      nudge_x = ..2,
+      hjust = 0,
+      size = 5,
+      family = "Source Sans 3",
+      direction = "y",
+      fontface = "bold",
+      # box.padding     = 0.9,   # Increase padding around labels
+      # point.padding   = 0.5,   # Padding around the point
+      # force           = 3,     # Spread out labels more
+      # max.overlaps    = 10,
+      segment.linetype = "dotted",
+      min.segment.length = ..3
+    )
+  ) +
+  # Draw rangeframe along bottom and left sides
+  geom_rangeframe(sides = "bl") +
+  # Titles and axis labels
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+  # Coordinate limits
+  coord_cartesian(
+    xlim = c(1925, 2030),
+    clip = "off",
+    expand = FALSE
+  ) +
+  # Minor theme tweaks
+  theme(
+    panel.border        = element_rect(size = 10, fill = NA, color = "transparent"),
+    plot.title.position = "plot",
+    plot.caption        = element_textbox(size = 10)
+  ) +
+  # Smooth line
+  geom_panel_lines() +
+  geom_xspline() +
+  stat_xspline(geom = "area", fill = usbphex, alpha = 0.3)
+
+
+# Export the plot
+ggs(
+  plot           = lt_ts_plot,
+  category       = "ltencounters",
+  subset         = "swb",
+  demographics   = NULL,
+  charttype      = "ts",
+  additionalinfo = "fy24aug",
+  extension      = ".jpg",
+  folder         = "mu_charts",
+  width          = 280,
+  height         = 170
+)
+
+```
+
+```{r SWB_monthly_TS}
+# Load data
+month_swbf <- read_csv(here("Encounter Data", "month_swbf (1).csv"))
+
+# Build & plot
+month_swbf_plot <- month_swbf %>%
+  bind_rows(
+    swb %>%
+      filter(component == "U.S. Border Patrol") %>%
+      summarise(across(encounter_count, sum), .by = date) %>%
+      filter(date > max(month_swbf$date))
+  ) %>%
+  arrange(desc(date)) %>%
+  mutate(year = year(date)) %>%
+  filter(year >= 2000) %>%
+  ggplot(aes(x = date, y = encounter_count)) +
+  # Custom theme
+  theme_usaid_blue(
+    base_size = 20,
+    subtitle = "Monthly Apprehensions Between Ports of Entry | 2000 - 2024",
+    title = "Migrants Apprehended at the U.S. Southwest Border",
+    caption = cap$swb_alt
+    # paste("<br>Chart updated", month(today(), abbr = TRUE, label = TRUE), year(today()))
+  ) +
+  # Highlight the latest data point
+  geom_point(
+    data = . %>% filter(date == max(date)),
+    show.legend = FALSE,
+    color = "black",
+    size = 1
+  ) +
+  # Customize y scale
+  scale_y_continuous(
+    breaks = seq(5e4, 2.5e5, 5e4),
+    labels = c("50", "100", "150", "200", "250K")
+  ) +
+  # Customize x scale
+  scale_x_date(
+    breaks      = seq.Date(as_date("2000-01-01"), as_date("2024-01-01"), by = "5 years") %>% c("2024-01-01"),
+    date_labels = "%Y"
+  ) +
+  # Light cleanup
+  theme(plot.title.position = "plot") +
+  labs(x = NULL, y = NULL) +
+  coord_cartesian(
+    clip = "off",
+    xlim = c(as.Date("2000-01-01"), max(month_swbf$date) + 650),
+    ylim = c(0, 2.5e5),
+    expand = FALSE
+  ) +
+  geom_panel_lines() +
+  # Label the latest data point
+  geom_text_repel(
+    data = . %>% filter(date == max(date)),
+    aes(label = paste0(round(encounter_count / 1e3), "K")),
+    hjust = 0,
+    nudge_x = 100,
+    size = 5,
+    family = "Source Sans 3",
+    fontface = "bold",
+    direction = "y"
+  ) +
+  # Smoothed area fill + outline
+  stat_xspline(geom = "area", fill = usbphex, alpha = 0.2) +
+  geom_xspline()
+
+# Export the plot
+ggs(
+  plot           = month_swbf_plot,
+  category       = "apprehensions",
+  subset         = "swb",
+  demographics   = NULL,
+  additionalinfo = "monthly_2020",
+  folder         = "mu_charts",
+  charttype      = "ts",
+  width          = 280,
+  height         = 170
+)
+```
+
+```{r SWB_TS}
+# Load Data
+
+swb_tsum <- swb %>%
+  mutate(fiscal_year = fiscal_year(date)) %>%
+  summarise(across(encounter_count, sum), .by = c(date, fiscal_year)) %>%
+  arrange(date)
+
+
+# Build & Plot
+
+swb_ts_plot <- swb_tsum %>%
+  ggplot(aes(x = date, y = encounter_count)) +
+  # Theme First: Title & Subtitle Here
+
+  theme_usaid_blue(
+    caption = paste(cap$swb_alt),
+    rf = TRUE,
+    base_size = 20,
+    title = "Migrants Encountered at the U.S. Southwest Border",
+    subtitle = paste(
+      "Monthly Encounters |",
+      month(range(swb_tsum$date)[1], label = TRUE, abbr = TRUE),
+      year(range(swb_tsum$date)[1]),
+      "-",
+      month(range(swb_tsum$date)[2], label = TRUE, abbr = TRUE),
+      year(range(swb_tsum$date)[2])
+    )
+  ) +
+
+
+  # Basic Axis Labels (no title/subtitle)
+
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+
+  # Highlight Specific Data Point
+
+  geom_point(
+    data  = . %>% filter(date == date2),
+    color = "black",
+    size  = 1.5
+  ) +
+
+
+  # labels
+
+  geom_text_repel(
+    aes(label = round(encounter_count / 1e3, 0) %>% paste0("K")),
+    data = . %>% filter(date == max(date)),
+    size = 5,
+    family = "Source Sans 3",
+    fontface = "bold",
+    direction = "y",
+    nudge_x = 20,
+    hjust = 0
+  ) +
+
+
+  # Y Scale
+
+  scale_y_continuous(
+    breaks = seq(1e5, 3e5, 1e5),
+    labels = c(100, 200, "300K"),
+    limits = c(0, 3.2e5),
+    expand = c(0, 0)
+  ) +
+
+
+  # X Scale
+
+  scale_x_date(
+    breaks       = seq.Date(my(paste(month2, 2014)), date2, by = "1 years"),
+    date_labels  = "%b '%y",
+    minor_breaks = seq.Date(min(swb_tsum$date), date2, by = "month")
+  ) +
+
+
+  # Coordinate Limits
+
+  coord_cartesian(
+    clip = "off",
+    expand = FALSE,
+    xlim = c(min(swb_tsum$date), max(swb_tsum$date) + 150),
+    ylim = c(0, max(swb_tsum$encounter_count) * 1.01)
+  ) +
+
+
+  # Additional Theme Tweaks
+
+  theme(
+    axis.minor.ticks.x.bottom = element_line(color = "grey")
+  ) +
+
+
+  # Remove Color Legend & Adjust X-Axis Guides
+  guides(
+    color = "none",
+    x = guide_axis(minor.ticks = TRUE)
+  ) +
+  geom_panel_lines() +
+
+
+  # Ribbon (Area Under the Curve)
+  stat_xspline(
+    geom  = "area",
+    fill  = "lightblue",
+    alpha = 0.2
+  ) +
+
+
+  # Spline Line
+
+  geom_xspline()
+
+
+# Export
+
+ggs(
+  plot         = swb_ts_plot,
+  folder       = "mu_charts",
+  category     = "encounters",
+  subset       = "swb",
+  extension    = ".png",
+  demographics = NULL,
+  charttype    = "ts",
+  width        = 280,
+  height       = 170
+)
+```
+
+```{r by POE all borders}
+
+# Data Filtering & Summarizing
+
+swb_tsum <- cbp_all %>%
+  filter(
+    # land_border_region == "Southwest Land Border",
+    fiscal_year >= 2019
+  ) %>%
+  summarise(
+    across(encounter_count, sum),
+    .by = c(date, fiscal_year, component)
+  ) %>%
+  mutate(
+    lab2 = ifelse(
+      component == "U.S. Border Patrol",
+      "Between\nPorts of Entry",
+      "At Ports of Entry"
+    )
+  )
+
+
+# Build & Plot
+
+component_plot <- swb_tsum %>%
+  ggplot(aes(x = date, y = encounter_count, color = component)) +
+
+
+  # Theme First (Title & Caption Inside)
+
+  theme_usaid_blue(
+    title = "Migrants Encountered at All U.S. Borders and Ports of Entry",
+    caption = paste(
+      cap$swb_alt, "<br>",
+      "Encounters at Ports of Entry defined as OFO inadmissibles and ",
+      "between ports of entry as USBP apprehensions"
+    ),
+    base_size = 20,
+    bl = FALSE
+  ) +
+
+
+  # Basic Axis Labels (No Title/Sub in Labs)
+
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+
+
+  # Y-Axis Scale
+
+  scale_y_continuous(
+    breaks = seq(0, 2.5e5, 5e4),
+    labels = c("0", "50", "100", "150", "200", "250K"),
+    limits = c(0, 3e5)
+  ) +
+
+  # ---------------------------
+  # X-Axis Scale
+  # ---------------------------
+  scale_x_date(
+    breaks      = tm_db(month = month2, year0 = 2018, n = 1),
+    date_labels = "%b '%y"
+  ) +
+
+
+  # Color Scale & Guide
+
+  scale_color_manual(
+    values = c("U.S. Border Patrol" = usbphex,
+               "Office of Field Operations" = ofohex)
+  ) +
+  guides(color = "none") +
+
+
+  # Coordinate & Clipping
+
+  coord_cartesian(
+    clip  = "off",
+    expand = FALSE,
+    xlim  = c(min(swb_tsum$date), max(swb_tsum$date) + 400),
+    ylim  = range(swb_tsum$encounter_count) * 1.01
+  ) +
+
+
+  # Mark Latest Data Point
+
+  geom_point(
+    data = . %>% filter(date == date2)
+  ) +
+
+
+  # Label the Latest Date
+
+  geom_text_repel(
+    data = . %>% filter(date == max(date)),
+    aes(label = lab2, color = component),
+    segment.linetype = "dotted",
+    hjust = 0,
+    clip = "off",
+    family = "Source Sans 3",
+    nudge_x = 50,
+    size = 5,
+    fontface = "bold",
+    direction = "y"
+  ) +
+
+
+  # Panel Lines & Spline
+
+  geom_panel_lines() +
+  geom_xspline() +
+
+
+  # Additional Theme Tweaks
+
+  theme(
+    legend.position = "top",
+    # Removed base_family here to avoid overwriting
+    axis.title.y = element_markdown(halign = 0.5),
+    plot.title = element_textbox_simple(margin = margin(5,5,10,5))
+  )
+
+
+# Export
+
+ggs(
+  plot          = component_plot,
+  category      = "encounters",
+  subset        = "swb",
+  demographics  = "component",
+  charttype     = "spaghetti",
+  folder        = "mu_charts",
+  width         = 280,
+  height        = 150,
+  dpi           = 300
+)
+```

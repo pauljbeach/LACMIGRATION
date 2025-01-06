@@ -25,11 +25,13 @@ load_supp_data <- function() {
         here("emoji", "other.png")
       )
     ))
-  wb_pop <- read_csv(here("Population Data","WB","wb_pop.csv")) %>% clean_names()
+  wb_pop <- read_csv(here("Population Data","WB","wb_pop_2024.csv"),
+                     show_col_types = FALSE) %>% 
+    clean_names()
   
   pop23 <- wb_pop %>%
     filter(series_code == "SP.POP.TOTL") %>%
-    select(citizenship = country_name, pop = x2023_yr2023) %>%
+    select(citizenship = country_name, pop = x2024_yr2024) %>%
     mutate(
       pop = as.numeric(pop),
       citizenship = toupper(citizenship),

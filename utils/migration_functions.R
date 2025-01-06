@@ -110,7 +110,6 @@ pull_cbp <- function(month,year = 2024,swb = T,force = F,fy = F, hardlink = NULL
 }
 
 
-
 # Pull GOM ----------------------------------------------------------------
 
 pull_mex <- function(year = 2024,manuallink = NULL,...){
@@ -153,7 +152,8 @@ pull_mex <- function(year = 2024,manuallink = NULL,...){
     mutate(date = ym(paste(year, month)),
            country_es = case_when(country_es == "Dominicana, Rep." ~"República Dominicana",
                                   T ~ country_es),
-           encounters = parse_number(encounters))
+           
+           encounters = as.character(encounters) %>% parse_number())
 }
 
 
@@ -553,13 +553,12 @@ compile_honduras <- function(csv){
   return(hn2)
 }
 
-# Pull Colombia
 
 
 # Pull CBP HUB ####
 update_hub <- function(month = NULL, year = 2024){
 
-
+month.abb
 urlhub <- "https://ohss.dhs.gov/topics/immigration/enforcement/legal-processes-monthly-tables"
 month <- tolower(month)
   # use rvest to scrape the links and identify the (likely correct one)
@@ -567,14 +566,33 @@ month <- tolower(month)
     httr::GET(config = httr::config(ssl_verifypeer = FALSE)) %>% 
     rvest::read_html()  
   
-  hublink <- hubsite %>% rvest::html_nodes("a") %>% rvest::html_attr("href") %>% 
-    .[str_detect(.,month)] %>% 
-    .[1] %>% 
+  hublinks <- hubsite %>% rvest::html_nodes("a") %>% rvest::html_attr("href") %>% 
+    .[str_detect(.,"ohss_immigration-enforcement-and-legal-processes-tables")] %>% 
     paste0("https://ohss.dhs.gov",.)
   
-  back_hub_link <- "https://ohss.dhs.gov/sites/default/files/2024-09/24-0906_ohss_immigration-enforcement-and-legal-processes-tables-may-2024.xlsx"
+  extract_month_year <- function(link) {
+    # Use a regular expression to capture the month-year pattern at the end of the link
+    match <- regmatches(link, regexpr("(january|february|march|april|may|june|july|august|september|october|november|december)-\\d{4}", link, ignore.case = TRUE))
+    if (length(match) > 0) {
+      # Convert the extracted string to a date object for comparison
+      as.Date(paste0("01-", match), format = "%d-%B-%Y")
+    } else {
+      NA
+    }
+  }
   
-  download_file <- function(url, path = "Encounter Data/cbp_hub.xlsx") {
+  # Apply the month-year extraction function to all links
+  dates <- sapply(hublinks, extract_month_year)
+  
+  # Find the index of the most recent date
+  most_recent_index <- which.max(dates)
+  
+  # Get the most recent link
+  most_recent_link <- hublinks[most_recent_index]
+  
+  # Output the result
+  cat("The most recent link is:\n", dates[which.max(dates)] %>% as.Date() %>% format("%B %Y"), "\n")  
+  download_file <- function(url, path = here("Encounter Data", "cbp_hub.xlsx")) {
     tryCatch(
       {
         GET(url, write_disk(path,overwrite = T))
@@ -587,12 +605,10 @@ month <- tolower(month)
     )
   }
   
-  if (!download_file(hublink)) {
-    download_file(back_hub_link)
-  }
-
-  
+ret <- download_file(most_recent_link)
 }
+
+
 
 
 pull_swblt <- function(){
@@ -732,7 +748,7 @@ pull_cbpone<- function(){
 }
 
 pull_cf_result <-  function(){
-  cbp_raw <- read_excel("cbp_hub.xlsx",
+  cbp_raw <- read_excel(here("Encounter Data" ,"cbp_hub.xlsx"),
                         sheet = "Nationwide CF by Result",
                         skip = 2)
   
@@ -754,7 +770,7 @@ pull_cf_result <-  function(){
 }
 
 pull_cf_citizenship <-  function(){
-  cbp_raw <- read_excel("cbp_hub.xlsx",
+  cbp_raw <- read_excel(here("Encounter Data" ,"cbp_hub.xlsx"),
                         sheet = "Nationwide CF Filed by Citp",
                         skip = 2)
   
@@ -1087,11 +1103,65 @@ cbp_pallete <-
     "GUINEA" =  "yellow3"
     
   )
+cbp_pallete2 <-
+  c(
+    "HONDURAS" = "#7b4173",
+    "Honduras" = "#7b4173",
+    "GUATEMALA"= "#6b6ecf",
+    "Guatemala"= "#6b6ecf",
+    "EL SALVADOR"="#393b79",
+    "El Salvador"="#393b79",
+    "MEXICO"=   "#1E2CAB",
+    "Mexico" =  "#1E2CAB",
+    "Nicaragua"="deepskyblue4",
+    "NICARAGUA"="deepskyblue4",
+    
+    
+    "Dominican Republic" =  "#cedb9c",
+    "DOMINICAN REPUBLIC" =  "#cedb9c",
+    
+    "HAITI"=    "#8ca252",
+    "Haiti"=    "#8ca252",
+    "Cuba"=     "forestgreen",
+    "CUBA"=     "forestgreen",
+    
+    "ECUADOR"=   "#FC8125",
+    "Ecuador"=   "#FC8625",
+    'PERU' =    "orange",
+    'Peru' =    "orange",
+    "Venezuela"="#8c6d31",
+    "VENEZUELA"="#8c6d31",
+    "BRAZIL"=   "coral4",
+    "Brazil"=   "coral4",
+    "COLOMBIA"= "coral1",
+    "Colombia"= "coral1",
+    "Chile" = "coral3",
+    "CHILE" = "coral3",
+    "All Others" = "grey50",
+    "OTHER"=    "grey50",
+    "Other"=    "grey50",
+    "China" = "#ce6dbd",
+    "CHINA" = "#ce6dbd",
+    "Northern Central America" = "coral",
+    "NORTHERN CENTRAL AMERICA" = "coral",
+    "NORTHERN\nCENTRAL AMERICA" = "coral",
+    "NORTHERN\nCENTRAL\nAMERICA" = "coral",
+    "Northern \nCentral \nAmerica" = "coral",
+    "Northern Central \nAmerica" = "coral",
+    "CHNV" = "darkgreen",
+    "CHNV\nCountries" = "darkgreen",
+    "CHNV\nCOUNTRIES" = "darkgreen",
+    "CHNV COUNTRIES" = "darkgreen",
+    "NCA" = "coral",
+    "SENEGAL" = "yellow1",
+    "GUINEA" =  "yellow3"
+    
+  )
 scale_fill_cbp <- function(...) {
-  scale_fill_manual(...,values = cbp_pallete)
+  scale_fill_manual(...,values = cbp_pallete2)
 }
 
-scale_color_cbp <- function(...) scale_color_manual(values = cbp_pallete)
+scale_color_cbp <- function(...) scale_color_manual(values = cbp_pallete2)
                                                     
 
 # Other -------------------------------------------------------------------
@@ -1212,4 +1282,36 @@ make_dp <- function(df){
                          stateless,
                          oip),~as.numeric(.) %>% replace_na(0)),
                 dp = refugees+asylum_seekers+oip)
+}
+
+
+
+label_maxunit <- function(digits = 2, abbr = T) {
+  function(x) {
+    # Identify the maximum break value
+    max_break <- max(x, na.rm = TRUE)
+    
+    # Determine the appropriate unit and divisor
+    if (max_break >= 1e6) {
+      unit <- "M"
+      if (abbr == F) unit <- "<br>Million"
+      divisor <- 1e6
+    } else if (max_break >= 1e3) {
+      unit <- "K"
+      if (abbr == F) unit <- "<br>Thousand"
+      divisor <- 1e3
+    } else {
+      unit <- ""
+      divisor <- 1
+    }
+    
+    # Divide all labels by the divisor and format them
+    formatted_labels <- signif(x / divisor, digits)
+    formatted_labels <- as.character(formatted_labels)
+    
+    # Append the unit modifier only to the largest label
+    formatted_labels[x == max_break] <- paste0(formatted_labels[x == max_break], unit)
+    
+    return(formatted_labels)
+  }
 }
